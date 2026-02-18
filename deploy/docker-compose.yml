@@ -1,0 +1,47 @@
+# =============================================================================
+# HiPrint Agent - Docker Compose 编排文件
+#
+# 使用方法：
+#   1. 将 config.json 放到本文件同级目录
+#   2. docker-compose up -d
+#
+# 如需访问宿主机 CUPS 打印服务，取消 volumes 和 network_mode 注释
+# =============================================================================
+
+version: '3.8'
+
+services:
+  hiprint-agent:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: hiprint-agent
+    restart: unless-stopped
+    ports:
+      - "17521:17521"
+      - "17522:17522"
+    volumes:
+      # 持久化数据目录（SQLite 数据库 + PDF 临时文件）
+      - hiprint-data:/app/data
+      # 持久化日志目录
+      - hiprint-logs:/app/logs
+      # 只读挂载配置文件
+      - ./config.json:/app/config.json:ro
+      # 如需访问宿主机 CUPS 打印服务，取消下行注释
+      # - /var/run/cups:/var/run/cups
+    environment:
+      - NODE_ENV=production
+      - TZ=Asia/Shanghai
+    # 网络模式：切换为 host 模式可直接访问宿主机 CUPS 服务
+    # 使用 host 模式时需注释 ports 配置
+    # network_mode: host
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:17522/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  hiprint-data:
+  hiprint-logs:

@@ -1,0 +1,24 @@
+{
+  "port": 17521,
+  "adminPort": 17522,
+  "token": "",
+  "ipWhitelist": [],
+  "renderConcurrency": 4,
+  "printConcurrency": 2,
+  "maxQueueSize": 1000,
+  "renderTimeout": 30000,
+  "printTimeout": 10000,
+  "logLevel": "info",
+  "logDir": "./logs",
+  "dbPath": "./data/hiprint.db",
+  "pdfDir": "./data/pdf",
+  "defaultPrinter": "",
+  "browserPoolSize": 4,
+  "pageReuseLimit": 50,
+  "jobRetentionDays": 30,
+  "allowEIO3": true,
+  "cors": {
+    "origin": "*",
+    "methods": ["GET", "POST"]
+  }
+}

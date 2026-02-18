@@ -1,0 +1,823 @@
+/* ============================================================
+ * HiPrint Agent 管理面板 - 自定义样式
+ *
+ * 深色主题覆盖 Pico.css 默认变量，提供侧边栏 / 底部导航
+ * 响应式布局、状态徽章、卡片网格、Toast 等自定义组件样式。
+ * ============================================================ */
+
+/* ============================================================
+ * CSS 变量 / 主题色
+ * ============================================================ */
+:root {
+  /* 背景色 */
+  --bg-primary: #1e293b;
+  --bg-card: #334155;
+  --bg-sidebar: #0f172a;
+  --bg-input: #1e293b;
+
+  /* 文字色 */
+  --text-primary: #e2e8f0;
+  --text-muted: #94a3b8;
+
+  /* 状态色 */
+  --color-done: #22c55e;
+  --color-printing: #3b82f6;
+  --color-failed: #ef4444;
+  --color-waiting: #f59e0b;
+  --color-rendering: #a855f7;
+  --color-cancelled: #6b7280;
+
+  /* 边框 */
+  --border-color: #475569;
+
+  /* 侧边栏宽度 */
+  --sidebar-width: 220px;
+
+  /* 底部导航高度 */
+  --bottom-nav-height: 60px;
+}
+
+/* ============================================================
+ * 全局重置 / 基础样式
+ * ============================================================ */
+html, body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  min-height: 100vh;
+}
+
+/* 覆盖 Pico.css 深色主题变量 */
+[data-theme="dark"] {
+  --pico-background-color: var(--bg-primary);
+  --pico-card-background-color: var(--bg-card);
+  --pico-card-border-color: var(--border-color);
+  --pico-color: var(--text-primary);
+  --pico-muted-color: var(--text-muted);
+}
+
+#app {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ============================================================
+ * 通用文本工具类
+ * ============================================================ */
+.text-muted { color: var(--text-muted); }
+.text-green { color: var(--color-done); }
+.text-red   { color: var(--color-failed); }
+
+/* ============================================================
+ * 侧边栏 (Desktop)
+ * ============================================================ */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  background-color: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+}
+
+.sidebar-header {
+  padding: 20px 16px 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-header h3 {
+  margin: 0 0 2px;
+  font-size: 18px;
+  color: var(--text-primary);
+}
+
+.sidebar-header small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+  text-align: left;
+  width: 100%;
+}
+
+.sidebar-btn:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.sidebar-btn.active {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: var(--color-printing);
+}
+
+.sidebar-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-footer small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ============================================================
+ * 主内容区
+ * ============================================================ */
+.main-content {
+  flex: 1;
+  padding: 20px;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.main-content.with-sidebar {
+  margin-left: var(--sidebar-width);
+}
+
+/* ============================================================
+ * Mobile 头部
+ * ============================================================ */
+.mobile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 16px;
+}
+
+.mobile-header h4 {
+  margin: 0;
+  font-size: 18px;
+}
+
+/* ============================================================
+ * 底部导航 (Mobile)
+ * ============================================================ */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--bottom-nav-height);
+  background-color: var(--bg-sidebar);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  z-index: 100;
+}
+
+.bottom-nav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.bottom-nav-btn.active {
+  color: var(--color-printing);
+}
+
+.bottom-nav-btn small {
+  font-size: 11px;
+}
+
+.bottom-spacer {
+  height: calc(var(--bottom-nav-height) + 16px);
+}
+
+/* ============================================================
+ * Tab 图标
+ * ============================================================ */
+.tab-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* ============================================================
+ * 连接状态指示
+ * ============================================================ */
+.connection-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.connection-dot.online {
+  background-color: var(--color-done);
+  box-shadow: 0 0 6px var(--color-done);
+}
+
+.connection-dot.offline {
+  background-color: var(--color-failed);
+  box-shadow: 0 0 6px var(--color-failed);
+}
+
+/* ============================================================
+ * 视图标题
+ * ============================================================ */
+.view-section {
+  max-width: 1200px;
+}
+
+.view-title {
+  margin: 0 0 16px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.section-subtitle {
+  margin: 24px 0 12px;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* ============================================================
+ * 统计卡片网格
+ * ============================================================ */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.stat-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
+.stat-card.mini {
+  text-align: center;
+}
+
+.stat-card.mini .stat-body {
+  padding: 12px 16px;
+}
+
+.stat-card-header {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.stat-card-header .stat-icon {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+.stat-body {
+  padding: 16px;
+}
+
+.stat-value {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stat-label {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat-detail {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ============================================================
+ * 内存进度条
+ * ============================================================ */
+.mem-bar {
+  width: 100%;
+  height: 6px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.mem-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.mem-bar-fill.mem-low    { background-color: var(--color-done); }
+.mem-bar-fill.mem-medium { background-color: var(--color-waiting); }
+.mem-bar-fill.mem-high   { background-color: var(--color-failed); }
+
+/* ============================================================
+ * 状态徽章
+ * ============================================================ */
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.badge-sm {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.badge-done {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: var(--color-done);
+}
+
+.badge-printing {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: var(--color-printing);
+  animation: pulse-blue 2s infinite;
+}
+
+.badge-failed {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: var(--color-failed);
+}
+
+.badge-waiting,
+.badge-received {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: var(--color-waiting);
+}
+
+.badge-rendering {
+  background-color: rgba(168, 85, 247, 0.15);
+  color: var(--color-rendering);
+}
+
+.badge-cancelled {
+  background-color: rgba(107, 114, 128, 0.15);
+  color: var(--color-cancelled);
+}
+
+.badge-default {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: var(--color-printing);
+}
+
+/* 打印机状态徽章 */
+.badge-printer-ready {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: var(--color-done);
+}
+
+.badge-printer-busy {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: var(--color-printing);
+}
+
+.badge-printer-stopped {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: var(--color-failed);
+}
+
+/* ============================================================
+ * 脉冲动画（打印中状态）
+ * ============================================================ */
+@keyframes pulse-blue {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+}
+
+/* ============================================================
+ * 打印机卡片
+ * ============================================================ */
+.printer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.printer-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: opacity 0.3s;
+  margin: 0;
+}
+
+.printer-card.printer-offline {
+  opacity: 0.55;
+}
+
+.printer-status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.printer-status-dot.status-ready {
+  background-color: var(--color-done);
+  box-shadow: 0 0 6px var(--color-done);
+}
+
+.printer-status-dot.status-busy {
+  background-color: var(--color-printing);
+  box-shadow: 0 0 6px var(--color-printing);
+  animation: pulse-dot 2s infinite;
+}
+
+.printer-status-dot.status-stopped {
+  background-color: var(--color-failed);
+  box-shadow: 0 0 6px var(--color-failed);
+}
+
+.printer-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.printer-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.printer-badges {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+ * 任务过滤 Tab
+ * ============================================================ */
+.job-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.filter-btn {
+  padding: 6px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.filter-btn:hover {
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+}
+
+.filter-btn.active {
+  background-color: var(--color-printing);
+  border-color: var(--color-printing);
+  color: #fff;
+}
+
+/* ============================================================
+ * 任务表格 (Desktop)
+ * ============================================================ */
+.job-table-wrap {
+  overflow-x: auto;
+}
+
+.job-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.job-table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.job-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.job-table tr:hover td {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.job-table code {
+  font-size: 12px;
+  color: var(--color-printing);
+}
+
+.job-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ============================================================
+ * 任务卡片 (Mobile)
+ * ============================================================ */
+.job-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.job-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 14px;
+  margin: 0;
+}
+
+.job-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.job-card-head code {
+  font-size: 12px;
+  color: var(--color-printing);
+}
+
+.job-card-body p {
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+.job-card-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+/* ============================================================
+ * 操作按钮
+ * ============================================================ */
+.btn-sm {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn-sm:hover {
+  opacity: 0.85;
+}
+
+.btn-cancel {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: var(--color-failed);
+}
+
+.btn-retry {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: var(--color-printing);
+}
+
+.btn-load-more {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.load-more {
+  text-align: center;
+  margin-top: 16px;
+}
+
+/* ============================================================
+ * 日志列表
+ * ============================================================ */
+.log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.log-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  background-color: rgba(255, 255, 255, 0.02);
+  flex-wrap: wrap;
+}
+
+.log-time {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: monospace;
+  flex-shrink: 0;
+}
+
+.log-detail {
+  flex: 1;
+  min-width: 0;
+}
+
+.log-detail code {
+  font-size: 12px;
+  color: var(--color-printing);
+}
+
+/* ============================================================
+ * 空状态
+ * ============================================================ */
+.empty-state {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 48px 20px;
+  font-size: 14px;
+}
+
+/* ============================================================
+ * Toast 提示
+ * ============================================================ */
+.toast-container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  animation: toast-in 0.3s ease, toast-out 0.3s ease 2.7s forwards;
+  pointer-events: auto;
+  max-width: 320px;
+  word-break: break-word;
+}
+
+.toast-success {
+  background-color: var(--color-done);
+}
+
+.toast-error {
+  background-color: var(--color-failed);
+}
+
+.toast-info {
+  background-color: var(--color-printing);
+}
+
+.toast-warning {
+  background-color: var(--color-waiting);
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(40px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(40px); }
+}
+
+/* ============================================================
+ * 响应式布局 - 移动端 (<768px)
+ * ============================================================ */
+@media (max-width: 767px) {
+  .main-content {
+    padding: 12px;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .printer-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .stat-value {
+    font-size: 18px;
+  }
+
+  .stat-body {
+    padding: 12px;
+  }
+
+  .stat-card-header {
+    padding: 8px 12px;
+  }
+
+  .view-title {
+    font-size: 18px;
+  }
+
+  .toast-container {
+    top: auto;
+    bottom: calc(var(--bottom-nav-height) + 12px);
+    right: 12px;
+    left: 12px;
+  }
+
+  .toast {
+    max-width: 100%;
+  }
+}
+
+/* ============================================================
+ * 响应式布局 - 小屏手机 (<400px)
+ * ============================================================ */
+@media (max-width: 399px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+}

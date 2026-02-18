@@ -1,0 +1,48 @@
+# =============================================================================
+# HiPrint Agent - systemd 服务单元文件
+#
+# 安装方法：
+#   sudo cp hiprint-agent.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable hiprint-agent
+#   sudo systemctl start hiprint-agent
+#
+# 查看日志：
+#   journalctl -u hiprint-agent -f
+#   tail -f /var/log/hiprint-agent/stdout.log
+# =============================================================================
+
+[Unit]
+Description=HiPrint Agent - 无头打印服务
+Documentation=https://github.com/CcSimple/electron-hiprint
+After=network.target cups.service
+Wants=cups.service
+
+[Service]
+Type=simple
+User=hiprint
+Group=hiprint
+WorkingDirectory=/opt/hiprint-agent
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/hiprint-agent/stdout.log
+StandardError=append:/var/log/hiprint-agent/stderr.log
+Environment=NODE_ENV=production
+
+# 安全加固：禁止获取新权限
+NoNewPrivileges=true
+# 安全加固：只读保护系统目录
+ProtectSystem=strict
+# 安全加固：禁止访问 /home
+ProtectHome=true
+# 允许写入的目录：数据、日志
+ReadWritePaths=/opt/hiprint-agent/data /opt/hiprint-agent/logs /var/log/hiprint-agent
+
+# 资源限制：最大打开文件数
+LimitNOFILE=65536
+# 资源限制：最大内存 2GB（Chromium 渲染可能占用较多内存）
+MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target
