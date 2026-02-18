@@ -5,11 +5,14 @@
 
 FROM mcr.microsoft.com/playwright:v1.49.0-noble
 
-# 安装 CUPS 客户端和 CJK 字体（中日韩文字渲染支持）
+# 安装 CUPS 客户端、CJK 字体、原生模块编译工具链
+# build-essential + python3: better-sqlite3 的 node-gyp 编译所需
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cups-client \
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
+    build-essential \
+    python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # 设置工作目录
@@ -18,8 +21,9 @@ WORKDIR /app
 # 先复制 package.json 和 lock 文件，利用 Docker 构建缓存层
 COPY package.json package-lock.json* ./
 
-# 安装生产依赖并下载 Chromium 浏览器
-RUN npm install --production --ignore-scripts && \
+# 安装生产依赖（不使用 --ignore-scripts，better-sqlite3 需要编译原生模块）
+# 然后下载与项目版本匹配的 Chromium 浏览器
+RUN npm install --production && \
     npx playwright install chromium
 
 # 复制项目源码
