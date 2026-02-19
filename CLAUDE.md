@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-基于 Node.js 20 的无头（Headless）打印服务，作为 electron-hiprint 的 Linux 服务器端替代方案。去除所有 Electron/GUI 依赖，使用 Playwright Chromium 进行 HTML 渲染，通过 CUPS 命令行（`lp`/`lpstat`/`lpadmin`/`cupsenable`/`cupsdisable`/`cancel`）与打印机交互。提供 Socket.IO Gateway（端口 17521）兼容 vue-plugin-hiprint 的完整连接协议，支持作为 Socket.IO 客户端连接 node-hiprint-transit 中转服务实现跨网段远程打印，以及 Admin Web（端口 17522）提供管理面板和 REST API，含登录认证、打印机 CRUD 管理、维护诊断工具。
+基于 Node.js 20 的无头（Headless）打印服务，作为 electron-hiprint 的 Linux 服务器端替代方案。去除所有 Electron/GUI 依赖，使用 Playwright Chromium 进行 HTML 渲染，通过 CUPS 命令行（`lp`/`lpstat`/`lpadmin`/`cupsenable`/`cupsdisable`/`cancel`）与打印机交互。提供 Socket.IO Gateway（端口 17521）兼容 vue-plugin-hiprint 的完整连接协议，支持作为 Socket.IO 客户端连接 node-hiprint-transit 中转服务实现跨网段远程打印，以及 Admin Web（端口 17522）提供管理面板和 REST API，含登录认证、打印机 CRUD 管理、维护诊断工具。支持多 Agent 部署场景（通过 `agentId` 唯一标识）。
 
 ## 入口与启动
 
@@ -22,7 +22,7 @@
 5.5. `createPrinterAdmin()` 初始化打印机管理服务（CRUD 操作）
 6. `createJobManager()` 初始化任务调度器（渲染队列 + 打印队列）
 6.5. `createMaintenanceService()` 初始化维护服务（诊断/队列清空/CUPS 重启）
-7. `createGateway()` 启动 Socket.IO Gateway（:17521）
+7. `createGateway()` 启动 Socket.IO Gateway（:17521），采集系统信息（含 `agentId`）
 7.5. `createTransitClient()` 启动中转客户端（可选，需配置 `connectTransit: true`）
 8. `createAdminWeb()` 启动 Admin Web 服务（:17522），含登录认证中间件
 9. 启动定时清理过期任务（每 6 小时，保留天数可配置），同步清理预览文件
@@ -36,14 +36,14 @@
 
 ### Socket.IO Gateway（端口 17521）
 
-完全兼容 electron-hiprint 的 Socket.IO 协议。
+完全兼容 electron-hiprint 的 Socket.IO 协议。详细协议规范见 `docs/protocol.md`。
 
 **服务端 -> 客户端事件：**
 
 | 事件名 | 说明 |
 |--------|------|
-| `printerList` | 推送 CUPS 打印机列表（兼容 electron-hiprint 格式） |
-| `clientInfo` | 推送 Agent 系统信息（hostname/version/ip/mac/machineId 等） |
+| `printerList` | 推送 CUPS 打印机列表（兼容 electron-hiprint 格式，含 agentId/agentHost/agentIp 来源标识） |
+| `clientInfo` | 推送 Agent 系统信息（hostname/version/ip/mac/machineId/agentId 等） |
 | `success` | 打印任务成功 |
 | `successs` | 兼容旧版 vue-plugin-hiprint 拼写错误，与 `success` 同时触发 |
 | `error` | 打印任务失败 |
@@ -63,6 +63,18 @@
 | `getClientInfo` | 请求系统信息 |
 | `refreshPrinterList` | 请求刷新打印机列表 |
 | `ippPrint` / `ippRequest` | Phase 2 预留，当前返回未实现错误 |
+
+### 打印机列表增强（多 Agent 部署）
+
+在多 Agent 部署场景下，通过 `enrichPrinterList()` 函数（`src/gateway/events.js`）为每台打印机注入来源标识：
+
+| 增强字段 | 来源 | 说明 |
+|----------|------|------|
+| `agentId` | `config.agentId` 或 `machineId` | Agent 唯一标识 |
+| `agentHost` | `systemInfo.hostname` | Agent 主机名 |
+| `agentIp` | `systemInfo.ip` | Agent IP 地址 |
+
+Web 端可据此在多个 Agent 之间正确路由打印任务。
 
 ### Admin Web REST API（端口 17522）
 
@@ -144,6 +156,7 @@ Admin Web 在同一端口挂载 WebSocket，推送 `job:update` / `printer:updat
 | `adminPort` | number | 17522 | 1024-65535 | Admin Web 端口 |
 | `token` | string | "" | - | Socket.IO 认证 Token，空则跳过认证 |
 | `ipWhitelist` | string[] | [] | - | IP 白名单，空则不限制 |
+| `agentId` | string | "" | - | Agent 唯一标识。用于多 Agent 部署场景，空时回退到 machineId。中转客户端连接时通过 query.clientId 传递给中转服务 |
 | `renderConcurrency` | number | 4 | 1-20 | Playwright 渲染并发数 |
 | `printConcurrency` | number | 2 | 1-20 | CUPS 打印并发数 |
 | `maxQueueSize` | number | 1000 | 1-10000 | 最大任务队列 |
@@ -224,6 +237,8 @@ received -> rendering -> printing -> done
 - **Admin API 测试**：通过 `curl http://localhost:17522/health` 验证健康状态。
 - **维护诊断**：通过 Admin Web 维护面板运行一键诊断，或 `POST /api/maintenance/diagnostics`。
 - **Prometheus 监控**：`GET /metrics` 端点输出标准 Prometheus 格式指标。
+- **协议文档**：`docs/protocol.md` 包含完整的 Socket.IO 协议规范、事件定义和通信示例。
+- **运维手册**：`docs/ops.md` 包含安装部署、CUPS 配置、故障排查、日志分析、监控、备份恢复、升级指南。
 - **代码风格**：ES Module（`"type": "module"`），无 lint 配置。
 - **Node.js 版本要求**：>= 20.0.0
 
@@ -262,21 +277,24 @@ received -> rendering -> printing -> done
 11. **Docker 环境下的机器 ID**
     Docker 容器内不信任系统 `/etc/machine-id`（镜像层共享），自动回退为 `data/machine-id` 持久化 UUID。通过 volume 挂载 `data/` 目录保证唯一性和持久性。
 
+12. **多 Agent 部署的 agentId**
+    `config.agentId` 用于在多个 hiprint-agent 实例通过同一中转服务连接时唯一标识每个 Agent。为空时回退到系统 `machineId`。中转客户端连接时通过 `query.clientId` 传递该标识，打印机列表中注入 `agentId`/`agentHost`/`agentIp` 字段供 Web 端路由。
+
 ## 相关文件清单
 
 ```
 hiprint-agent/
   package.json                       # 项目配置（Node.js 20, ES Module）
-  config.json                        # 运行时配置（含 admin 认证块）
+  config.json                        # 运行时配置（含 admin 认证块、agentId）
   CLAUDE.md                          # 本模块文档
   src/
     index.js                         # 主入口：按顺序启动所有子系统
     config.js                        # 配置管理：加载/校验/更新/Proxy 只读导出
     logger.js                        # pino 日志：开发环境 pretty，生产环境 JSON
     gateway/
-      server.js                      # Socket.IO Gateway 创建与配置
+      server.js                      # Socket.IO Gateway 创建与配置（含 agentId 采集）
       auth.js                        # Socket.IO Token 认证 + IP 白名单中间件
-      events.js                      # 事件注册（对齐 electron-hiprint 命名）
+      events.js                      # 事件注册 + enrichPrinterList()（多 Agent 标识注入）
       transit-client.js              # 中转客户端：连接 node-hiprint-transit 实现远程打印
     jobs/
       manager.js                     # Job Manager：渲染队列 + 打印队列 + 状态机
@@ -326,12 +344,16 @@ hiprint-agent/
     docker-compose.yml               # Docker Compose 编排（volume 持久化 + 健康检查）
     hiprint-agent.service            # systemd 服务单元（安全加固 + 资源限制）
     install.sh                       # Linux 一键安装脚本（Ubuntu/Debian/CentOS/RHEL）
+  docs/
+    protocol.md                      # Socket.IO 协议文档（事件/认证/Payload/示例/兼容性）
+    ops.md                           # 运维手册（部署/CUPS/配置/排障/日志/监控/备份/升级）
 ```
 
 ## 变更记录 (Changelog)
 
 | 时间 | 操作 | 说明 |
 |------|------|------|
-| 2026-02-19T17:56:37+08:00 | 增量更新 | 新增 Admin 登录认证系统（express-session + bcryptjs）；新增打印机 CRUD 管理（admin.js + cups.js 扩展 + printers 路由扩展）；新增维护诊断系统（maintenance/service.js + 路由）；新增 Dockerfile 多阶段构建和 install.sh 一键安装脚本；Admin Web 前端大幅改版为企业级暗色响应式主题；新增任务预览功能；新增 previewDir 和 admin 配置项；依赖新增 bcryptjs/express-session/node-machine-id；docs/ 目录已删除 |
+| 2026-02-19T20:46:42+08:00 | 增量更新 | 新增 agentId 配置项文档（多 Agent 部署唯一标识，config.json + config.js 校验 + server.js/transit-client.js/events.js 使用）；新增 enrichPrinterList 函数说明（打印机列表来源标识注入）；补充 docs/ 目录引用（protocol.md 协议文档 + ops.md 运维手册）；新增 FAQ 第 12 条（多 Agent 部署说明） |
+| 2026-02-19T17:56:37+08:00 | 增量更新 | 新增 Admin 登录认证系统（express-session + bcryptjs）；新增打印机 CRUD 管理（admin.js + cups.js 扩展 + printers 路由扩展）；新增维护诊断系统（maintenance/service.js + 路由）；新增 Dockerfile 多阶段构建和 install.sh 一键安装脚本；Admin Web 前端大幅改版为企业级暗色响应式主题；新增任务预览功能；新增 previewDir 和 admin 配置项；依赖新增 bcryptjs/express-session/node-machine-id |
 | 2026-02-19T11:58:59+08:00 | 功能新增 | 新增中转客户端模块（transit-client.js）：支持连接 node-hiprint-transit 实现跨网段远程打印；更新配置校验、启动流程、Admin 状态接口 |
 | 2026-02-19T11:01:45+08:00 | 初始创建 | 首次扫描生成 hiprint-agent 模块文档 |
