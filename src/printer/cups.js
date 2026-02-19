@@ -59,12 +59,12 @@ function parsePrinterLine(line) {
     status = 'idle';
   }
 
-  return { name, status, description: description.trim() };
+  return { name, status, description: description.trim(), location: '' };
 }
 
 /**
  * 列出所有可用打印机
- * @returns {Promise<Array<{ name: string, status: string, isDefault: boolean, description: string }>>}
+ * @returns {Promise<Array<{ name: string, status: string, isDefault: boolean, description: string, location: string }>>}
  */
 export async function listPrinters() {
   const output = await safeExec('lpstat', ['-p', '-d']);
@@ -85,6 +85,37 @@ export async function listPrinters() {
     const printer = parsePrinterLine(line);
     if (printer) {
       printers.push(printer);
+    }
+  }
+
+  // 尝试通过 lpstat -l -p 获取 location 和 info 等额外信息
+  const detailOutput = await safeExec('lpstat', ['-l', '-p']);
+  if (detailOutput) {
+    const detailLines = detailOutput.split('\n');
+    let currentPrinterName = null;
+    const locationMap = {};
+
+    for (const dline of detailLines) {
+      // 匹配打印机主行
+      const printerMatch = dline.match(/^printer\s+(\S+)\s+/);
+      if (printerMatch) {
+        currentPrinterName = printerMatch[1];
+        continue;
+      }
+      // 匹配 Location 行（缩进开头）
+      if (currentPrinterName) {
+        const locMatch = dline.match(/^\s+Location:\s*(.+)/);
+        if (locMatch) {
+          locationMap[currentPrinterName] = locMatch[1].trim();
+        }
+      }
+    }
+
+    // 将 location 合并到打印机对象
+    for (const p of printers) {
+      if (locationMap[p.name]) {
+        p.location = locationMap[p.name];
+      }
     }
   }
 

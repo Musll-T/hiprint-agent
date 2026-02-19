@@ -17,8 +17,9 @@
 
   /* 文字层级 */
   --text-primary:   #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-tertiary:  #71717a;
+  --text-secondary: #d4d4d8;
+  --text-tertiary:  #a1a1aa;
+  --text-quaternary: #71717a;
 
   /* 主色 */
   --accent:      #3b82f6;
@@ -33,8 +34,8 @@
   --color-cancelled: #71717a;
 
   /* 边框 */
-  --border-color:  #27272a;
-  --border-subtle: #1f1f23;
+  --border-color:  #3f3f46;
+  --border-subtle: #27272a;
 
   /* 侧边栏 */
   --sidebar-width: 240px;
@@ -109,6 +110,8 @@ h1, h2, h3, h4, h5, h6, p, small {
 .text-muted { color: var(--text-secondary); }
 .text-green { color: var(--color-done); }
 .text-red   { color: var(--color-failed); }
+.text-blue  { color: var(--color-printing); }
+.text-purple { color: var(--color-rendering); }
 
 /* 等宽数字 */
 .tabular-nums {
@@ -426,11 +429,42 @@ h1, h2, h3, h4, h5, h6, p, small {
 }
 
 .stat-card-header .stat-icon {
+  display: inline-flex;
+  align-items: center;
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   text-transform: uppercase;
-  color: var(--text-tertiary);
   letter-spacing: 1px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-tertiary);
+}
+
+/* 统计卡片 icon 色彩标识 */
+.stat-icon-cpu {
+  background: rgba(59, 130, 246, 0.12) !important;
+  color: var(--color-printing) !important;
+}
+
+.stat-icon-mem {
+  background: rgba(168, 85, 247, 0.12) !important;
+  color: var(--color-rendering) !important;
+}
+
+.stat-icon-jobs {
+  background: rgba(34, 197, 94, 0.12) !important;
+  color: var(--color-done) !important;
+}
+
+.stat-icon-uptime {
+  background: rgba(245, 158, 11, 0.12) !important;
+  color: var(--color-waiting) !important;
+}
+
+.stat-icon-device {
+  background: rgba(113, 113, 122, 0.12) !important;
+  color: var(--text-tertiary) !important;
 }
 
 .stat-body {
@@ -449,10 +483,9 @@ h1, h2, h3, h4, h5, h6, p, small {
 .stat-label {
   margin: 0;
   font-size: 13px;
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--text-tertiary);
+  word-break: break-word;
+  line-height: 1.4;
 }
 
 .stat-detail {
@@ -637,11 +670,14 @@ h1, h2, h3, h4, h5, h6, p, small {
 }
 
 /* ============================================================
- * 打印机卡片
+ * 打印机卡片 - 纵向三分区布局
+ *
+ * 结构：头部（名称+状态灯+徽章） → 中部（详细信息行） → 底部（操作按钮）
+ * 所有文字自然换行，不截断。自适应网格排列。
  * ============================================================ */
 .printer-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 12px;
 }
 
@@ -649,12 +685,11 @@ h1, h2, h3, h4, h5, h6, p, small {
   background-color: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  padding: 16px 20px;
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
   transition: border-color var(--transition-base);
   margin: 0;
+  overflow: hidden;
 }
 
 .printer-card:hover {
@@ -663,6 +698,23 @@ h1, h2, h3, h4, h5, h6, p, small {
 
 .printer-card.printer-offline {
   opacity: 0.5;
+}
+
+/* -- 头部：状态灯 + 名称 + 徽章 -- */
+.printer-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.printer-card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .printer-status-dot {
@@ -688,30 +740,62 @@ h1, h2, h3, h4, h5, h6, p, small {
   box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
 }
 
-.printer-info {
-  flex: 1;
-  min-width: 0;
-}
-
 .printer-name {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--text-primary);
-}
-
-.printer-desc {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  margin-top: 2px;
+  word-break: break-word;
+  line-height: 1.3;
 }
 
 .printer-badges {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
+}
+
+/* -- 中部：Key-Value 信息行 -- */
+.printer-detail-rows {
+  padding: 10px 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 没有详细信息时不占空间 */
+.printer-detail-rows:empty {
+  display: none;
+}
+
+.printer-detail-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.printer-detail-label {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  font-weight: 600;
+  background: var(--bg-elevated);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.printer-detail-value {
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+/* -- 底部：操作按钮 -- */
+.printer-actions {
+  display: flex;
+  gap: 4px;
+  padding: 10px 20px 14px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: auto;
 }
 
 /* ============================================================
@@ -876,6 +960,20 @@ h1, h2, h3, h4, h5, h6, p, small {
   border-color: rgba(239, 68, 68, 0.4);
 }
 
+.btn-cancel:disabled,
+.btn-cancel[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* 通用 btn-sm 禁用态 */
+.btn-sm:disabled,
+.btn-sm[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .btn-retry {
   color: var(--accent);
   border-color: rgba(59, 130, 246, 0.2);
@@ -909,14 +1007,18 @@ h1, h2, h3, h4, h5, h6, p, small {
 
 .stat-value-id {
   font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.5px;
   color: var(--text-secondary);
   cursor: default;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+  line-height: 1.5;
+  background: var(--bg-elevated);
+  padding: 6px 10px;
+  border-radius: 6px;
+  display: inline-block;
 }
 
 .load-more {
@@ -1048,6 +1150,14 @@ h1, h2, h3, h4, h5, h6, p, small {
     gap: 10px;
   }
 
+  .printer-card-header {
+    flex-wrap: wrap;
+  }
+
+  .printer-actions {
+    justify-content: flex-start;
+  }
+
   .stat-card {
     padding: 14px;
   }
@@ -1094,18 +1204,6 @@ h1, h2, h3, h4, h5, h6, p, small {
     font-size: 10px;
   }
 
-  .printer-card {
-    flex-wrap: wrap;
-  }
-
-  .printer-actions {
-    width: 100%;
-    justify-content: flex-end;
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid var(--border-subtle);
-  }
-
   .view-title-bar {
     flex-direction: column;
     align-items: flex-start;
@@ -1150,15 +1248,6 @@ h1, h2, h3, h4, h5, h6, p, small {
   justify-content: space-between;
   margin-bottom: 24px;
   gap: 16px;
-}
-
-/* ============================================================
- * 打印机操作按钮组
- * ============================================================ */
-.printer-actions {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
 }
 
 /* ============================================================
@@ -1493,6 +1582,20 @@ h1, h2, h3, h4, h5, h6, p, small {
 .maint-action-desc {
   font-size: 12px;
   color: var(--text-tertiary);
+}
+
+.maint-action-hint {
+  margin-top: 4px;
+}
+
+/* 禁用按钮外层包裹（使禁用时仍可显示 tooltip） */
+.btn-disabled-wrap {
+  display: inline-block;
+  cursor: not-allowed;
+}
+
+.btn-disabled-wrap > button:disabled {
+  pointer-events: none;
 }
 
 /* ============================================================

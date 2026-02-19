@@ -535,7 +535,7 @@ const app = createApp({
         deviceUri: '',
         model: '',
         description: printer.description || '',
-        location: '',
+        location: printer.location || '',
       };
       printerFormErrors.value = {};
       showPrinterModal.value = true;

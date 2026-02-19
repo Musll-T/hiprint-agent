@@ -61,7 +61,7 @@
           <!-- CPU 卡片 -->
           <article class="stat-card">
             <div class="stat-card-header">
-              <span class="stat-icon">CPU</span>
+              <span class="stat-icon stat-icon-cpu">CPU</span>
             </div>
             <div class="stat-body">
               <p class="stat-value stat-value-animated">{{ systemStats.system?.cpuCount || 0 }} 核</p>
@@ -72,7 +72,7 @@
           <!-- 内存卡片（环形进度） -->
           <article class="stat-card">
             <div class="stat-card-header">
-              <span class="stat-icon">内存</span>
+              <span class="stat-icon stat-icon-mem">内存</span>
             </div>
             <div class="stat-body">
               <p class="stat-value stat-value-animated">{{ formatBytes(systemStats.system?.freeMem) }} 可用</p>
@@ -102,7 +102,7 @@
           <!-- 活跃任务卡片 -->
           <article class="stat-card">
             <div class="stat-card-header">
-              <span class="stat-icon">任务</span>
+              <span class="stat-icon stat-icon-jobs">任务</span>
             </div>
             <div class="stat-body">
               <p class="stat-value stat-value-animated">{{ activeJobCount }}</p>
@@ -117,7 +117,7 @@
           <!-- 运行时间卡片 -->
           <article class="stat-card">
             <div class="stat-card-header">
-              <span class="stat-icon">运行</span>
+              <span class="stat-icon stat-icon-uptime">运行</span>
             </div>
             <div class="stat-body">
               <p class="stat-value stat-value-animated">{{ formatUptime(systemStats.system?.uptime) }}</p>
@@ -131,10 +131,10 @@
           <!-- 设备编号卡片 -->
           <article class="stat-card">
             <div class="stat-card-header">
-              <span class="stat-icon">设备</span>
+              <span class="stat-icon stat-icon-device">设备</span>
             </div>
             <div class="stat-body">
-              <p class="stat-value stat-value-id" :title="systemStats.system?.machineId || ''">{{ systemStats.system?.machineId ? systemStats.system.machineId.substring(0, 12) + '...' : '未获取' }}</p>
+              <p class="stat-value stat-value-id" :title="systemStats.system?.machineId || ''">{{ systemStats.system?.machineId || '未获取' }}</p>
               <p class="stat-label">设备编号</p>
               <div class="stat-detail">
                 <button class="btn-sm btn-copy" v-if="systemStats.system?.machineId" @click="copyMachineId">复制</button>
@@ -148,7 +148,7 @@
         <div class="stats-grid">
           <article class="stat-card mini">
             <div class="stat-body">
-              <p class="stat-value stat-value-animated">{{ systemStats.jobs?.received || 0 }}</p>
+              <p class="stat-value stat-value-animated text-blue">{{ systemStats.jobs?.received || 0 }}</p>
               <p class="stat-label">已接收</p>
             </div>
           </article>
@@ -166,7 +166,7 @@
           </article>
           <article class="stat-card mini">
             <div class="stat-body">
-              <p class="stat-value stat-value-animated">{{ systemStats.connections || 0 }}</p>
+              <p class="stat-value stat-value-animated text-purple">{{ systemStats.connections || 0 }}</p>
               <p class="stat-label">连接数</p>
             </div>
           </article>
@@ -186,15 +186,31 @@
             class="printer-card"
             :class="{ 'printer-offline': p.status > 0 }"
           >
-            <div class="printer-status-dot" :class="printerStatusClass(p.status)"></div>
-            <div class="printer-info">
-              <div class="printer-name">{{ p.displayName || p.name }}</div>
-              <div class="printer-desc">{{ p.description || '无描述' }}</div>
+            <!-- 头部：状态灯 + 名称 + 徽章 -->
+            <div class="printer-card-header">
+              <div class="printer-card-title">
+                <div class="printer-status-dot" :class="printerStatusClass(p.status)"></div>
+                <div class="printer-name">{{ p.displayName || p.name }}</div>
+              </div>
+              <div class="printer-badges">
+                <span v-if="p.isDefault" class="badge badge-default">默认</span>
+                <span class="badge" :class="printerBadgeClass(p.status)">{{ printerStatusText(p.status) }}</span>
+              </div>
             </div>
-            <div class="printer-badges">
-              <span v-if="p.isDefault" class="badge badge-default">默认</span>
-              <span class="badge" :class="printerBadgeClass(p.status)">{{ printerStatusText(p.status) }}</span>
+
+            <!-- 中部：详细信息行 -->
+            <div class="printer-detail-rows">
+              <div class="printer-detail-row" v-if="p.description && p.description !== '无描述'">
+                <span class="printer-detail-label">描述</span>
+                <span class="printer-detail-value">{{ p.description }}</span>
+              </div>
+              <div class="printer-detail-row" v-if="p.location">
+                <span class="printer-detail-label">位置</span>
+                <span class="printer-detail-value">{{ p.location }}</span>
+              </div>
             </div>
+
+            <!-- 底部：操作按钮 -->
             <div class="printer-actions">
               <button class="btn-sm btn-ghost" @click="openEditPrinter(p)" title="编辑">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
@@ -437,13 +453,20 @@
             <div class="maint-action-info">
               <div class="maint-action-title">重启 CUPS 服务</div>
               <div class="maint-action-desc">通过 systemctl 或 service 命令重启 CUPS 打印服务</div>
+              <div class="maint-action-hint" v-if="cupsStatus && cupsStatus.canRestart === false">
+                <small class="text-muted" style="color: var(--color-waiting);">⚠ 宿主机模式下请在宿主机执行 systemctl restart cups</small>
+              </div>
             </div>
-            <button
-              class="btn-sm btn-cancel"
-              @click="confirmMaintenanceAction('restartCups', '重启 CUPS 服务')"
-              :disabled="cupsStatus && cupsStatus.canRestart === false"
+            <span
+              class="btn-disabled-wrap"
               :title="cupsStatus && cupsStatus.canRestart === false ? '宿主机模式下请在宿主机执行 systemctl restart cups' : ''"
-            >重启 CUPS</button>
+            >
+              <button
+                class="btn-sm btn-cancel"
+                @click="confirmMaintenanceAction('restartCups', '重启 CUPS 服务')"
+                :disabled="cupsStatus && cupsStatus.canRestart === false"
+              >重启 CUPS</button>
+            </span>
           </div>
         </div>
 

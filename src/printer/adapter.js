@@ -98,6 +98,7 @@ export function createPrinterAdapter(adapterConfig = {}) {
       isDefault: p.isDefault,
       status: mapStatusToNumber(p.status),
       description: p.description,
+      location: p.location || '',
       options: {},
     }));
   }
