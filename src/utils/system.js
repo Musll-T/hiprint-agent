@@ -3,7 +3,8 @@ import { version as nodeVersion } from 'node:process';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { machineIdSync } from 'node-machine-id';
+import machineId from 'node-machine-id';
+const { machineIdSync } = machineId;
 
 // 读取 package.json 中的版本号（启动时一次性读取）
 const __dirname = dirname(fileURLToPath(import.meta.url));
