@@ -29,9 +29,10 @@ RUN npm ci --omit=dev && \
 ARG PLAYWRIGHT_VERSION=1.58.2
 FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble
 
-# 安装 CUPS 客户端和 CJK 字体（中日韩文字渲染支持）
+# 安装 CUPS 完整包（含 cupsd 守护进程）和 CJK 字体（中日韩文字渲染支持）
+# 容器内无 systemd，cupsd 由维护服务直接管理进程生命周期
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    cups-client \
+    cups \
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
     && rm -rf /var/lib/apt/lists/*

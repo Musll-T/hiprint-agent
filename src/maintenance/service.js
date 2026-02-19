@@ -95,7 +95,7 @@ export function createMaintenanceService({ jobManager, printerAdapter, config })
   /**
    * 重启 CUPS 服务
    *
-   * 先尝试 systemctl restart cups，失败则尝试 service cups restart。
+   * 三级回退策略：systemctl -> service -> 直接启动 cupsd（容器环境）。
    *
    * @returns {Promise<{ success: boolean, method: string }>}
    */
@@ -120,7 +120,19 @@ export function createMaintenanceService({ jobManager, printerAdapter, config })
       return { success: true, method: 'service' };
     }
 
-    log.error({ stderr: serviceResult.stderr }, 'CUPS 服务重启失败');
+    log.debug({ stderr: serviceResult.stderr }, 'service 命令失败，尝试直接启动 cupsd');
+
+    // 方法 3: 直接启动 cupsd（适用于无 systemd/init 的容器环境）
+    // 先终止已有 cupsd 进程（失败不影响后续启动）
+    await safeExecResult('killall', ['cupsd']);
+    const cupsdResult = await safeExecResult('cupsd');
+    if (cupsdResult.success) {
+      log.info('CUPS 服务已通过直接启动 cupsd 重启');
+      addAuditLog(null, 'maintenance_restart_cups', '通过 cupsd 直接启动成功（容器模式）');
+      return { success: true, method: 'cupsd' };
+    }
+
+    log.error({ stderr: cupsdResult.stderr }, 'CUPS 服务重启失败（所有方法均不可用）');
     return { success: false, method: 'none' };
   }
 
