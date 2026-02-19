@@ -59,6 +59,29 @@ function validateConfig(cfg) {
     }
   }
 
+  // 中转客户端配置校验
+  if (cfg.connectTransit !== undefined && typeof cfg.connectTransit !== 'boolean') {
+    errors.push(`connectTransit 必须为 boolean 类型，当前值: ${cfg.connectTransit}`);
+  }
+  if (cfg.connectTransit === true) {
+    if (!cfg.transitUrl || typeof cfg.transitUrl !== 'string') {
+      errors.push('connectTransit 启用时 transitUrl 必须为非空字符串');
+    } else {
+      try {
+        const url = new URL(cfg.transitUrl);
+        const allowed = new Set(['http:', 'https:', 'ws:', 'wss:']);
+        if (!allowed.has(url.protocol)) {
+          errors.push(`transitUrl 协议不支持: ${url.protocol}，仅允许 http/https/ws/wss`);
+        }
+      } catch {
+        errors.push(`transitUrl 格式非法: ${cfg.transitUrl}`);
+      }
+    }
+    if (!cfg.transitToken || typeof cfg.transitToken !== 'string') {
+      errors.push('connectTransit 启用时 transitToken 必须为非空字符串');
+    }
+  }
+
   if (errors.length > 0) {
     throw new Error(`配置校验失败:\n  - ${errors.join('\n  - ')}`);
   }

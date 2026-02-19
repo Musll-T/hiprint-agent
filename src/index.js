@@ -10,6 +10,7 @@ import { createAdminWeb } from './web/server.js';
 let browserPool = null;
 let jobManager = null;
 let gateway = null;
+let transitClient = null;
 let adminWeb = null;
 /** 过期任务定时清理器 */
 let jobCleanupTimer = null;
@@ -62,12 +63,27 @@ async function main() {
   });
   log.info('Socket Gateway 启动完成');
 
+  // 7.5 启动中转客户端（可选）
+  if (config.connectTransit && config.transitUrl && config.transitToken) {
+    const { createTransitClient } = await import('./gateway/transit-client.js');
+    transitClient = createTransitClient({
+      config,
+      jobManager,
+      printerAdapter,
+      systemInfo: gateway.systemInfo,
+    });
+    log.info('中转客户端已启动，目标: %s', config.transitUrl);
+  } else if (config.connectTransit) {
+    log.warn('connectTransit 已启用但 transitUrl 或 transitToken 未配置，跳过中转客户端');
+  }
+
   // 8. 启动 Admin Web (:17522)
   adminWeb = await createAdminWeb({
     config,
     jobManager,
     printerAdapter,
     gatewayIo: gateway.io,
+    transitClient,
   });
   log.info('Admin Web 启动完成');
 
@@ -108,6 +124,12 @@ async function shutdown(signal) {
     if (adminWeb) {
       await adminWeb.close();
       log.info('Admin Web 已关闭');
+    }
+
+    if (transitClient) {
+      transitClient.close();
+      transitClient = null;
+      log.info('中转客户端已关闭');
     }
 
     if (gateway) {

@@ -14,21 +14,34 @@ import { getSystemInfo } from '../../utils/system.js';
  * @param {object} deps.jobManager - Job Manager 实例
  * @param {object} deps.printerAdapter - 打印适配器实例
  * @param {() => number} deps.getConnectionCount - 获取当前 WebSocket 连接数的函数
+ * @param {object} [deps.transitClient] - 中转客户端实例（可选）
  * @returns {import('express').Router} 注册后的路由实例
  */
-export function statusRoutes(router, { jobManager, printerAdapter, getConnectionCount }) {
+export function statusRoutes(router, { jobManager, printerAdapter, getConnectionCount, transitClient }) {
   router.get('/api/status', async (_req, res, next) => {
     try {
       const system = getSystemInfo();
       const jobs = jobManager.getStats();
       const connections = typeof getConnectionCount === 'function' ? getConnectionCount() : 0;
 
-      res.json({
+      const result = {
         system,
         jobs,
         connections,
         uptime: process.uptime(),
-      });
+      };
+
+      if (transitClient) {
+        result.transit = {
+          enabled: true,
+          connected: transitClient.isConnected(),
+          socketId: transitClient.client?.id || null,
+        };
+      } else {
+        result.transit = { enabled: false, connected: false };
+      }
+
+      res.json(result);
     } catch (err) {
       next(err);
     }

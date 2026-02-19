@@ -31,7 +31,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  * @param {import('socket.io').Server} [deps.gatewayIo] - Socket Gateway 的 IO 实例（用于获取连接数）
  * @returns {Promise<{ app: import('express').Express, httpServer: import('node:http').Server, close: () => Promise<void> }>}
  */
-export async function createAdminWeb({ config, jobManager, printerAdapter, gatewayIo }) {
+export async function createAdminWeb({ config, jobManager, printerAdapter, gatewayIo, transitClient }) {
   const log = getLogger();
   const app = express();
 
@@ -69,7 +69,7 @@ export async function createAdminWeb({ config, jobManager, printerAdapter, gatew
     return 0;
   };
 
-  const deps = { jobManager, printerAdapter, getConnectionCount };
+  const deps = { jobManager, printerAdapter, getConnectionCount, transitClient };
 
   healthRoutes(app, deps);
   statusRoutes(app, deps);

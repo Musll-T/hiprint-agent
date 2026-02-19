@@ -4,11 +4,11 @@
 
 ## 模块职责
 
-基于 Node.js 20 的无头（Headless）打印服务，作为 electron-hiprint 的 Linux 服务器端替代方案。去除所有 Electron/GUI 依赖，使用 Playwright Chromium 进行 HTML 渲染，通过 CUPS 命令行（`lp`/`lpstat`/`cancel`）与打印机交互。提供 Socket.IO Gateway（端口 17521）兼容 vue-plugin-hiprint 的完整连接协议，以及 Admin Web（端口 17522）提供管理面板和 REST API。
+基于 Node.js 20 的无头（Headless）打印服务，作为 electron-hiprint 的 Linux 服务器端替代方案。去除所有 Electron/GUI 依赖，使用 Playwright Chromium 进行 HTML 渲染，通过 CUPS 命令行（`lp`/`lpstat`/`cancel`）与打印机交互。提供 Socket.IO Gateway（端口 17521）兼容 vue-plugin-hiprint 的完整连接协议，支持作为 Socket.IO 客户端连接 node-hiprint-transit 中转服务实现跨网段远程打印，以及 Admin Web（端口 17522）提供管理面板和 REST API。
 
 ## 入口与启动
 
-- **主入口**：`src/index.js` -- 应用主启动函数，按顺序初始化配置、日志、数据库、浏览器池、打印适配器、Job Manager、Socket Gateway、Admin Web
+- **主入口**：`src/index.js` -- 应用主启动函数，按顺序初始化配置、日志、数据库、浏览器池、打印适配器、Job Manager、Socket Gateway、中转客户端（可选）、Admin Web
 - **npm 启动命令**：`npm run start` -- 等价于 `node src/index.js`
 - **配置文件**：`config.json` -- JSON 格式运行时配置
 
@@ -21,13 +21,14 @@
 5. `createPrinterAdapter()` 初始化 CUPS 打印适配器
 6. `createJobManager()` 初始化任务调度器（渲染队列 + 打印队列）
 7. `createGateway()` 启动 Socket.IO Gateway（:17521）
+7.5. `createTransitClient()` 启动中转客户端（可选，需配置 `connectTransit: true`）
 8. `createAdminWeb()` 启动 Admin Web 服务（:17522）
 9. 启动定时清理过期任务（每 6 小时，保留天数可配置）
 10. 注册 SIGINT/SIGTERM 优雅关闭处理
 
 ### 优雅关闭
 
-收到 SIGINT/SIGTERM 信号后，按逆序关闭：Admin Web -> Socket Gateway -> Job Manager -> Browser Pool -> DB。
+收到 SIGINT/SIGTERM 信号后，按逆序关闭：Admin Web -> Transit Client -> Socket Gateway -> Job Manager -> Browser Pool -> DB。
 
 ## 对外接口
 
@@ -91,6 +92,7 @@ Admin Web 在同一端口挂载 WebSocket，推送 `job:update` / `printer:updat
 | 依赖 | 用途 |
 |------|------|
 | `socket.io@^4.7.0` | Socket.IO 服务端 |
+| `socket.io-client@^4.7.0` | Socket.IO 客户端（连接中转服务） |
 | `express@^4.18.0` | Admin Web HTTP 框架 |
 | `better-sqlite3@^11.0.0` | SQLite 数据库（同步 API，WAL 模式） |
 | `playwright@^1.49.0` | Headless Chromium 渲染引擎 |
@@ -124,6 +126,9 @@ Admin Web 在同一端口挂载 WebSocket，推送 `job:update` / `printer:updat
 | `jobRetentionDays` | number | 30 | - | 历史任务保留天数 |
 | `allowEIO3` | boolean | true | - | 兼容 EIO3 协议 |
 | `cors` | object | {"origin":"*"} | - | CORS 配置 |
+| `connectTransit` | boolean | false | - | 是否启用中转客户端 |
+| `transitUrl` | string | "" | - | 中转服务地址（如 `http://transit.example.com:17521`） |
+| `transitToken` | string | "" | - | 中转服务认证 Token |
 
 ## 数据模型
 
@@ -203,6 +208,12 @@ received -> rendering -> printing -> done
 6. **IPP 打印**
    Phase 2 预留，当前调用会返回 `IPP 打印功能将在 Phase 2 中实现` 错误。
 
+7. **中转客户端连接失败**
+   若 `transitToken` 配置错误，中转客户端会在鉴权失败后立即断开并停止重连（记录 fatal 日志）。检查 `config.json` 中的 `transitUrl` 和 `transitToken` 配置。
+
+8. **中转模式与 Server 模式共存**
+   启用 `connectTransit` 不影响本地 Socket.IO Gateway(:17521) 的正常运行。两种模式通过 `clientId` 前缀 `transit:` 区分任务来源，回调互不干扰。
+
 ## 相关文件清单
 
 ```
@@ -217,6 +228,7 @@ hiprint-agent/
       server.js                      # Socket.IO Gateway 创建与配置
       auth.js                        # Token 认证 + IP 白名单中间件
       events.js                      # 事件注册（对齐 electron-hiprint 命名）
+      transit-client.js              # 中转客户端：连接 node-hiprint-transit 实现远程打印
     jobs/
       manager.js                     # Job Manager：渲染队列 + 打印队列 + 状态机
       store.js                       # better-sqlite3 持久化（jobs + audit_log）
@@ -256,4 +268,5 @@ hiprint-agent/
 
 | 时间 | 操作 | 说明 |
 |------|------|------|
+| 2026-02-19T11:58:59+08:00 | 功能新增 | 新增中转客户端模块（transit-client.js）：支持连接 node-hiprint-transit 实现跨网段远程打印；更新配置校验、启动流程、Admin 状态接口 |
 | 2026-02-19T11:01:45+08:00 | 初始创建 | 首次扫描生成 hiprint-agent 模块文档 |

@@ -20,5 +20,8 @@
   "cors": {
     "origin": "*",
     "methods": ["GET", "POST"]
-  }
+  },
+  "connectTransit": false,
+  "transitUrl": "",
+  "transitToken": ""
 }

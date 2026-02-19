@@ -117,6 +117,7 @@ export async function createGateway({ config, jobManager, printerAdapter }) {
   return {
     io,
     httpServer,
+    systemInfo,
 
     /**
      * 优雅关闭 Gateway
