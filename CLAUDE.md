@@ -42,7 +42,7 @@
 
 | 事件名 | 说明 |
 |--------|------|
-| `printerList` | 推送 CUPS 打印机列表（兼容 electron-hiprint 格式，含 agentId/agentHost/agentIp 来源标识） |
+| `printerList` | 推送 CUPS 打印机列表（兼容 electron-hiprint 格式，含 agentId/agentHost/agentIp 来源标识、location 位置信息） |
 | `clientInfo` | 推送 Agent 系统信息（hostname/version/ip/mac/machineId/agentId 等） |
 | `success` | 打印任务成功 |
 | `successs` | 兼容旧版 vue-plugin-hiprint 拼写错误，与 `success` 同时触发 |
@@ -74,6 +74,8 @@
 | `agentHost` | `systemInfo.hostname` | Agent 主机名 |
 | `agentIp` | `systemInfo.ip` | Agent IP 地址 |
 
+打印机列表中每台打印机还包含 `location` 字段（通过 `lpstat -l -p` 获取 CUPS 中设置的打印机位置信息）。
+
 Web 端可据此在多个 Agent 之间正确路由打印任务。
 
 ### Admin Web REST API（端口 17522）
@@ -95,8 +97,8 @@ Web 端可据此在多个 Agent 之间正确路由打印任务。
 | GET | `/api/status` | 系统状态概览（CPU/内存/队列/连接数/中转状态） |
 | GET | `/api/config` | 获取当前系统配置（敏感字段脱敏，附带需重启的字段元数据） |
 | PUT | `/api/config` | 更新系统配置（支持部分更新，密码自动 bcrypt 哈希，校验后写盘） |
-| GET | `/api/printers` | 获取打印机列表 |
-| POST | `/api/printers` | 添加打印机（name, deviceUri 必填） |
+| GET | `/api/printers` | 获取打印机列表（含 location 位置信息） |
+| POST | `/api/printers` | 添加打印机（name, deviceUri 必填；可选 model, description, location） |
 | PUT | `/api/printers/:name` | 修改打印机配置（description/location/deviceUri） |
 | DELETE | `/api/printers/:name` | 删除打印机 |
 | POST | `/api/printers/:name/default` | 设为默认打印机 |
@@ -132,7 +134,15 @@ Web 端可据此在多个 Agent 之间正确路由打印任务。
 
 ### Admin WebSocket
 
-Admin Web 在同一端口挂载 WebSocket，推送 `job:update` / `printer:update` / `sys:stats` 实时事件。
+Admin Web 在同一端口（:17522）挂载 WebSocket（路径 `/admin-ws`），推送以下实时事件：
+
+| 事件名 | 说明 | 触发条件 |
+|--------|------|----------|
+| `job:update` | 任务状态变更 | 任何任务状态变化时实时推送 |
+| `printer:update` | 打印机列表更新 | 任务进入终态后防抖 1.5 秒推送（合并短时间内多个终态事件） |
+| `sys:stats` | 系统+队列指标快照 | 每 5 秒定时推送（含 system/jobs/connections/timestamp） |
+
+`printer:update` 推送机制说明：当任务进入终态（done/failed_render/failed_print/canceled/timeout）后，后端延迟 1.5 秒查询 CUPS 打印机状态并推送给所有 Admin 客户端，留给 CUPS 更新内部状态的缓冲时间。多个任务短时间内完成时自动防抖合并，避免频繁查询。前端收到 `printer:update` 后同时取消降级的定时轮询刷新。
 
 ### 认证机制
 
@@ -141,6 +151,7 @@ Admin Web 在同一端口挂载 WebSocket，推送 `job:update` / `printer:updat
   - Session 有效期 24 小时，`httpOnly` cookie
   - `admin.sessionSecret` 未配置时每次重启 session 失效（控制台警告）
   - 认证未配置时以开放模式运行（所有接口无需登录）
+- **Admin WebSocket 认证**：认证启用时，WebSocket 握手需携带 `auth.adminToken` 字段
 - **Socket.IO Token 认证**：`socket.handshake.auth.token` 与 `config.token` 匹配
   - Token 为空时跳过认证（开放模式）
 - **IP 白名单**：`config.ipWhitelist` 数组，空数组不限制，支持 IPv4/IPv6
@@ -165,6 +176,20 @@ Admin Web 在同一端口挂载 WebSocket，推送 `job:update` / `printer:updat
 | `uuid@^11.0.0` | UUID v7 生成 |
 | `dayjs@^1.11.0` | 日期处理 |
 | `node-machine-id@^1.1.12` | 机器唯一标识（跨平台） |
+
+### 渲染资源注入
+
+Playwright 渲染页面时通过 `src/renderer/resources.js` 自动注入以下资源：
+
+| 资源 | 本地路径 | CDN 降级 | 用途 |
+|------|----------|----------|------|
+| bwip-js | `src/public/vendor/bwip-js.min.js` | `cdn.jsdelivr.net/npm/bwip-js@4` | 二维码/条码生成（Canvas） |
+| JsBarcode | `src/public/vendor/JsBarcode.all.min.js` | `cdn.jsdelivr.net/npm/jsbarcode@3` | 条形码生成（多格式支持） |
+| nzh | `src/public/vendor/nzh.min.js` | `cdn.jsdelivr.net/npm/nzh@1` | 中文数字转换（大写金额等） |
+
+加载策略：优先从本地 `vendor/` 目录加载（安全、离线可用），本地文件不存在时降级到 CDN（记录警告日志）。单个脚本加载失败不中断渲染流程。
+
+还注入 CJK 字体声明样式（Noto Sans CJK SC / Source Han Sans SC 系列）和基础打印样式（`print-color-adjust: exact`）。
 
 ### 配置项（`config.json`）
 
@@ -299,7 +324,7 @@ received -> rendering -> printing -> done
    需先执行 `npx playwright install chromium` 和 `npx playwright install-deps chromium` 安装浏览器及系统依赖。Docker 镜像已内置。
 
 3. **中文/CJK 字体缺失**
-   Linux 服务器需安装 `fonts-noto-cjk`。Docker 镜像和 `install.sh` 脚本已包含。
+   Linux 服务器需安装 `fonts-noto-cjk`。Docker 镜像和 `install.sh` 脚本已包含。渲染时自动注入 Noto Sans CJK SC 字体声明。
 
 4. **`successs` 事件拼写**
    与 electron-hiprint 保持一致的兼容行为，请勿修改。
@@ -331,6 +356,9 @@ received -> rendering -> printing -> done
 13. **配置在线修改**
     通过 `PUT /api/config` 可在线修改大部分配置项。部分参数（`port`/`adminPort`/`browserPoolSize`/`dbPath`/`allowEIO3`）修改后需重启服务才能生效，API 返回 `needRestart: true` 提示。敏感字段（token/password/sessionSecret）有特殊保护机制。
 
+14. **条码/二维码渲染**
+    渲染页面自动注入 bwip-js（二维码/条码）、JsBarcode（条形码）和 nzh（中文数字）三个库。PDF 渲染时通过 `waitForFunction` 智能等待 canvas 元素绘制完成（最长 500ms），加上最少 50ms 的额外等待确保简单绘制完成。JPEG 截图渲染使用固定 200ms 等待。脚本优先从本地 `vendor/` 目录加载，本地不存在时降级到 CDN。
+
 ## 相关文件清单
 
 ```
@@ -353,19 +381,19 @@ hiprint-agent/
       types.js                       # JobStatus / JobType 枚举 + JSDoc 类型
     renderer/
       pool.js                        # Playwright 浏览器池（页面复用 + 信号量）
-      html-to-pdf.js                 # HTML -> PDF 渲染
+      html-to-pdf.js                 # HTML -> PDF 渲染（含条码/二维码智能等待）
       html-to-jpeg.js                # HTML -> JPEG 截图
-      resources.js                   # 条码/二维码/CJK 字体资源注入（本地优先，CDN 降级）
+      resources.js                   # 资源注入：bwip-js + JsBarcode + nzh 脚本（本地优先/CDN 降级）+ CJK 字体样式
     printer/
-      adapter.js                     # 打印适配器（面向 Job Manager 的高级接口）
+      adapter.js                     # 打印适配器（面向 Job Manager 的高级接口，含 location 字段）
       admin.js                       # 打印机管理服务（CRUD + 输入校验 + 审计日志）
-      cups.js                        # CUPS 命令封装（lpstat/lp/lpadmin/cupsenable/cupsdisable/cancel）
+      cups.js                        # CUPS 命令封装（lpstat/lp/lpadmin/cupsenable/cupsdisable/cancel + location 获取）
       options.js                     # 打印选项映射（copies/duplex/landscape/pageSize/color/pageRanges -> lp 参数）
     maintenance/
       service.js                     # 维护服务（队列清空/CUPS 重启/连通性检测/日志/诊断）
     web/
       server.js                      # Express Admin Web 服务（含 session + bcrypt 登录认证 + 配置路由注册）
-      socket.js                      # Admin WebSocket 推送
+      socket.js                      # Admin WebSocket 推送（job:update + printer:update 防抖 + sys:stats 定时）
       middleware/
         auth.js                      # 认证中间件（白名单路径 + session 检查）
       routes/
@@ -387,10 +415,13 @@ hiprint-agent/
         custom.css                   # 管理面板主样式（企业级暗色主题 + 移动端适配）
         login.css                    # 登录页样式
       js/
-        app.js                       # Vue 3 前端应用（仪表盘/打印机管理/任务/维护/配置/日志）
+        app.js                       # Vue 3 前端应用（仪表盘/打印机管理/任务/维护/配置/日志 + 打印机实时更新）
         login.js                     # 登录页前端逻辑
       vendor/
-        .gitkeep                     # 第三方库占位
+        bwip-js.min.js               # bwip-js 二维码/条码库（本地缓存）
+        JsBarcode.all.min.js         # JsBarcode 条形码库（本地缓存）
+        nzh.min.js                   # nzh 中文数字转换库（本地缓存）
+        .gitkeep                     # 占位文件
   deploy/
     Dockerfile                       # 多阶段构建（Playwright 基础镜像 + CUPS + CJK 字体）
     docker-compose.yml               # Docker Compose 编排（volume 持久化 + 健康检查）
@@ -405,6 +436,7 @@ hiprint-agent/
 
 | 时间 | 操作 | 说明 |
 |------|------|------|
+| 2026-02-20T00:47:41+08:00 | 增量更新 | 新增打印机状态实时推送（socket.js 新增 printer:update 事件防抖推送，前端 app.js 监听实时更新并取消降级轮询）；新增 JsBarcode 和 nzh 本地 vendor 库（resources.js 资源注入扩展为 bwip-js + JsBarcode + nzh 三库）；新增打印机位置信息支持（cups.js listPrinters 通过 lpstat -l -p 获取 Location、adapter.js 返回 location 字段、前端打印机表单增加 location）；新增渲染资源注入文档和 FAQ 第 14 条 |
 | 2026-02-19T23:21:46+08:00 | 增量更新 | 新增系统配置管理功能：config.js 新增 getConfig()/updateConfig() 热更新函数；新增 src/web/routes/config.js 配置路由（GET/PUT /api/config，含脱敏/密码哈希/重启标记/审计日志）；jobs 表新增 print_options 列（含自动迁移）；manager.js 新增 extractPrintOptions() 打印参数提取与持久化；审计日志新增 config_update 操作类型；新增 FAQ 第 13 条（配置在线修改说明） |
 | 2026-02-19T20:46:42+08:00 | 增量更新 | 新增 agentId 配置项文档（多 Agent 部署唯一标识，config.json + config.js 校验 + server.js/transit-client.js/events.js 使用）；新增 enrichPrinterList 函数说明（打印机列表来源标识注入）；补充 docs/ 目录引用（protocol.md 协议文档 + ops.md 运维手册）；新增 FAQ 第 12 条（多 Agent 部署说明） |
 | 2026-02-19T17:56:37+08:00 | 增量更新 | 新增 Admin 登录认证系统（express-session + bcryptjs）；新增打印机 CRUD 管理（admin.js + cups.js 扩展 + printers 路由扩展）；新增维护诊断系统（maintenance/service.js + 路由）；新增 Dockerfile 多阶段构建和 install.sh 一键安装脚本；Admin Web 前端大幅改版为企业级暗色响应式主题；新增任务预览功能；新增 previewDir 和 admin 配置项；依赖新增 bcryptjs/express-session/node-machine-id |
