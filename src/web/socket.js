@@ -5,16 +5,21 @@
  * 监听 JobManager 事件并实时推送给前端管理面板。
  *
  * 推送事件：
- *   - job:update    — 任务状态变更（实时）
- *   - sys:stats     — 系统+队列指标快照（每 5 秒）
+ *   - job:update       — 任务状态变更（实时）
+ *   - printer:update   — 打印机列表变更（任务终态后延迟推送）
+ *   - sys:stats        — 系统+队列指标快照（每 5 秒）
  */
 
 import { Server as SocketIOServer } from 'socket.io';
 import { getSystemInfo } from '../utils/system.js';
 import { getLogger } from '../logger.js';
+import { TERMINAL_STATUSES } from '../jobs/types.js';
 
 /** 系统指标推送间隔（毫秒） */
 const STATS_INTERVAL_MS = 5000;
+
+/** 打印机状态推送防抖延迟（毫秒），留给 CUPS 更新内部状态 */
+const PRINTER_UPDATE_DELAY_MS = 1500;
 
 /**
  * 创建 Admin WebSocket 实例
@@ -71,6 +76,25 @@ export function createAdminSocket(httpServer, { jobManager, printerAdapter, auth
   };
   jobManager.events.on('job:update', onJobUpdate);
 
+  // 任务进入终态时，延迟推送打印机列表更新（防抖合并）
+  let printerUpdateTimer = null;
+  const onJobUpdateForPrinter = (job) => {
+    if (!TERMINAL_STATUSES.includes(job?.status)) return;
+
+    // 防抖：多个任务短时间内完成只触发一次查询
+    if (printerUpdateTimer) clearTimeout(printerUpdateTimer);
+    printerUpdateTimer = setTimeout(async () => {
+      printerUpdateTimer = null;
+      try {
+        const printers = await printerAdapter.getPrinters();
+        io.emit('printer:update', { printers });
+      } catch (err) {
+        log.warn({ err }, '推送打印机状态更新失败');
+      }
+    }, PRINTER_UPDATE_DELAY_MS);
+  };
+  jobManager.events.on('job:update', onJobUpdateForPrinter);
+
   // 定时推送系统指标
   const statsTimer = setInterval(() => {
     try {
@@ -93,7 +117,9 @@ export function createAdminSocket(httpServer, { jobManager, printerAdapter, auth
    */
   function close() {
     clearInterval(statsTimer);
+    if (printerUpdateTimer) clearTimeout(printerUpdateTimer);
     jobManager.events.off('job:update', onJobUpdate);
+    jobManager.events.off('job:update', onJobUpdateForPrinter);
     io.close();
     log.info('Admin WebSocket 已关闭');
   }

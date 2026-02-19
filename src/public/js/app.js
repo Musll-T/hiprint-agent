@@ -1272,10 +1272,23 @@ const app = createApp({
       // 任务状态变更（使用 requestAnimationFrame 节流批量处理）
       let jobUpdateQueue = [];
       let jobUpdateScheduled = false;
+      /** 任务终态触发的打印机刷新防抖定时器 */
+      let printerRefreshDebounce = null;
+      /** 任务终态集合 */
+      const TERMINAL_STATUSES = ['done', 'failed_render', 'failed_print', 'canceled', 'timeout'];
 
       socket.on('job:update', (job) => {
         if (!job || !job.id) return;
         jobUpdateQueue.push(job);
+
+        // 任务进入终态时，防抖刷新打印机列表（作为 printer:update 的降级方案）
+        if (TERMINAL_STATUSES.includes(job.status)) {
+          if (printerRefreshDebounce) clearTimeout(printerRefreshDebounce);
+          printerRefreshDebounce = setTimeout(() => {
+            printerRefreshDebounce = null;
+            loadPrinters();
+          }, 2000);
+        }
 
         if (!jobUpdateScheduled) {
           jobUpdateScheduled = true;
@@ -1308,6 +1321,18 @@ const app = createApp({
       socket.on('sys:stats', (stats) => {
         if (stats) {
           systemStats.value = stats;
+        }
+      });
+
+      // 打印机状态实时更新（后端在任务终态后推送）
+      socket.on('printer:update', (data) => {
+        if (data && Array.isArray(data.printers)) {
+          printers.value = data.printers;
+          // 收到实时推送后取消降级刷新定时器
+          if (printerRefreshDebounce) {
+            clearTimeout(printerRefreshDebounce);
+            printerRefreshDebounce = null;
+          }
         }
       });
     }
