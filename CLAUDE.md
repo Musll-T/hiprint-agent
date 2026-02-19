@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-基于 Node.js 20 的无头（Headless）打印服务，作为 electron-hiprint 的 Linux 服务器端替代方案。去除所有 Electron/GUI 依赖，使用 Playwright Chromium 进行 HTML 渲染，通过 CUPS 命令行（`lp`/`lpstat`/`lpadmin`/`cupsenable`/`cupsdisable`/`cancel`）与打印机交互。提供 Socket.IO Gateway（端口 17521）兼容 vue-plugin-hiprint 的完整连接协议，支持作为 Socket.IO 客户端连接 node-hiprint-transit 中转服务实现跨网段远程打印，以及 Admin Web（端口 17522）提供管理面板和 REST API，含登录认证、打印机 CRUD 管理、维护诊断工具。支持多 Agent 部署场景（通过 `agentId` 唯一标识）。
+基于 Node.js 20 的无头（Headless）打印服务，作为 electron-hiprint 的 Linux 服务器端替代方案。去除所有 Electron/GUI 依赖，使用 Playwright Chromium 进行 HTML 渲染，通过 CUPS 命令行（`lp`/`lpstat`/`lpadmin`/`cupsenable`/`cupsdisable`/`cancel`）与打印机交互。提供 Socket.IO Gateway（端口 17521）兼容 vue-plugin-hiprint 的完整连接协议，支持作为 Socket.IO 客户端连接 node-hiprint-transit 中转服务实现跨网段远程打印，以及 Admin Web（端口 17522）提供管理面板和 REST API，含登录认证、打印机 CRUD 管理、系统配置在线修改、维护诊断工具。支持多 Agent 部署场景（通过 `agentId` 唯一标识）。
 
 ## 入口与启动
 
@@ -16,7 +16,7 @@
 
 1. `loadConfig()` 加载并校验 `config.json`
 2. `initLogger(config)` 初始化 pino 日志系统
-3. `initDB(config.dbPath)` 初始化 SQLite 数据库（WAL 模式）
+3. `initDB(config.dbPath)` 初始化 SQLite 数据库（WAL 模式），含自动迁移（如 `print_options` 列添加）
 4. `createBrowserPool()` 启动 Playwright Chromium 浏览器池
 5. `createPrinterAdapter()` 初始化 CUPS 打印适配器
 5.5. `createPrinterAdmin()` 初始化打印机管理服务（CRUD 操作）
@@ -24,7 +24,7 @@
 6.5. `createMaintenanceService()` 初始化维护服务（诊断/队列清空/CUPS 重启）
 7. `createGateway()` 启动 Socket.IO Gateway（:17521），采集系统信息（含 `agentId`）
 7.5. `createTransitClient()` 启动中转客户端（可选，需配置 `connectTransit: true`）
-8. `createAdminWeb()` 启动 Admin Web 服务（:17522），含登录认证中间件
+8. `createAdminWeb()` 启动 Admin Web 服务（:17522），含登录认证中间件，注册配置管理路由
 9. 启动定时清理过期任务（每 6 小时，保留天数可配置），同步清理预览文件
 10. 注册 SIGINT/SIGTERM 优雅关闭处理
 
@@ -93,6 +93,8 @@ Web 端可据此在多个 Agent 之间正确路由打印任务。
 |------|------|------|
 | POST | `/api/logout` | 登出（销毁 session） |
 | GET | `/api/status` | 系统状态概览（CPU/内存/队列/连接数/中转状态） |
+| GET | `/api/config` | 获取当前系统配置（敏感字段脱敏，附带需重启的字段元数据） |
+| PUT | `/api/config` | 更新系统配置（支持部分更新，密码自动 bcrypt 哈希，校验后写盘） |
 | GET | `/api/printers` | 获取打印机列表 |
 | POST | `/api/printers` | 添加打印机（name, deviceUri 必填） |
 | PUT | `/api/printers/:name` | 修改打印机配置（description/location/deviceUri） |
@@ -111,6 +113,22 @@ Web 端可据此在多个 Agent 之间正确路由打印任务。
 | GET | `/api/maintenance/cups/logs` | 获取 CUPS 错误日志（`?lines=100`，最大 1000） |
 | POST | `/api/maintenance/diagnostics` | 一键诊断（CUPS 状态 + 打印机 + 磁盘空间 + 队列） |
 | GET | `/api/maintenance/cups/status` | 获取 CUPS 服务状态 |
+
+### 配置管理 API 详细说明
+
+`GET /api/config` 返回脱敏后的配置，敏感字段处理规则：
+- `token` / `transitToken`：仅显示前 4 位 + `****` 掩码
+- `admin.password`：返回空字符串（不暴露哈希值）
+- `admin.sessionSecret`：完全移除
+- 附加 `_meta.restartRequired` 数组，标注修改后需重启才能生效的参数（`port`、`adminPort`、`browserPoolSize`、`dbPath`、`allowEIO3`）
+
+`PUT /api/config` 支持部分更新，特殊处理：
+- `admin.password`：非空时自动进行 bcrypt 哈希（要求最少 6 字符），空值则保留原密码
+- `admin.sessionSecret`：不允许通过 API 修改
+- 以 `****` 结尾的 token 值视为未修改，自动忽略
+- 调用 `updateConfig()` 执行合并校验 + 写盘
+- 返回 `needRestart` 标记指示是否需要重启服务
+- 所有变更记录审计日志（`config_update` 操作）
 
 ### Admin WebSocket
 
@@ -152,8 +170,8 @@ Admin Web 在同一端口挂载 WebSocket，推送 `job:update` / `printer:updat
 
 | 字段 | 类型 | 默认值 | 范围 | 说明 |
 |------|------|--------|------|------|
-| `port` | number | 17521 | 1024-65535 | Socket.IO Gateway 端口 |
-| `adminPort` | number | 17522 | 1024-65535 | Admin Web 端口 |
+| `port` | number | 17521 | 1024-65535 | Socket.IO Gateway 端口（修改需重启） |
+| `adminPort` | number | 17522 | 1024-65535 | Admin Web 端口（修改需重启） |
 | `token` | string | "" | - | Socket.IO 认证 Token，空则跳过认证 |
 | `ipWhitelist` | string[] | [] | - | IP 白名单，空则不限制 |
 | `agentId` | string | "" | - | Agent 唯一标识。用于多 Agent 部署场景，空时回退到 machineId。中转客户端连接时通过 query.clientId 传递给中转服务 |
@@ -164,14 +182,14 @@ Admin Web 在同一端口挂载 WebSocket，推送 `job:update` / `printer:updat
 | `printTimeout` | number | 10000 | - | 打印超时（ms） |
 | `logLevel` | string | "info" | trace-fatal | 日志级别 |
 | `logDir` | string | "./logs" | - | 日志目录 |
-| `dbPath` | string | "./data/hiprint.db" | - | SQLite 数据库路径 |
+| `dbPath` | string | "./data/hiprint.db" | - | SQLite 数据库路径（修改需重启） |
 | `pdfDir` | string | "./data/pdf" | - | PDF 临时文件目录 |
 | `previewDir` | string | "./data/preview" | - | 任务预览 HTML 存放目录 |
 | `defaultPrinter` | string | "" | - | 默认打印机 |
-| `browserPoolSize` | number | 4 | 1-20 | Chromium 页面池大小 |
+| `browserPoolSize` | number | 4 | 1-20 | Chromium 页面池大小（修改需重启） |
 | `pageReuseLimit` | number | 50 | - | 页面最大复用次数 |
 | `jobRetentionDays` | number | 30 | - | 历史任务保留天数 |
-| `allowEIO3` | boolean | true | - | 兼容 EIO3 协议 |
+| `allowEIO3` | boolean | true | - | 兼容 EIO3 协议（修改需重启） |
 | `cors` | object | {"origin":"*"} | - | CORS 配置 |
 | `connectTransit` | boolean | false | - | 是否启用中转客户端 |
 | `transitUrl` | string | "" | - | 中转服务地址（如 `http://transit.example.com:17521`） |
@@ -179,7 +197,18 @@ Admin Web 在同一端口挂载 WebSocket，推送 `job:update` / `printer:updat
 | `admin` | object | (无) | - | Admin Web 认证配置（不配置则开放模式） |
 | `admin.username` | string | - | - | 管理员用户名 |
 | `admin.password` | string | - | - | 管理员密码（bcrypt 哈希） |
-| `admin.sessionSecret` | string | (随机) | - | Session 签名密钥（建议固定值） |
+| `admin.sessionSecret` | string | (随机) | - | Session 签名密钥（建议固定值，不可通过 API 修改） |
+
+### 配置热更新
+
+`src/config.js` 提供三个核心函数：
+- `loadConfig(path?)` -- 启动时加载并校验配置文件
+- `getConfig()` -- 获取当前配置的深拷贝快照
+- `updateConfig(partial)` -- 合并更新配置（浅合并，嵌套对象一层深合并），校验后写盘
+
+`config` 导出为只读 Proxy，访问时自动转发到内部 `_config`，直接赋值会抛出错误。
+
+需要重启才生效的参数：`port`、`adminPort`、`browserPoolSize`、`dbPath`、`allowEIO3`。
 
 ## 数据模型
 
@@ -206,6 +235,9 @@ Admin Web 在同一端口挂载 WebSocket，推送 `job:update` / `printer:updat
 | html_hash | TEXT | HTML 内容哈希 |
 | retry_count | INTEGER | 重试次数（默认 0） |
 | page_num | INTEGER | 页数 |
+| print_options | TEXT | 打印参数 JSON（copies/duplex/duplexMode/landscape/pageSize/color/pageRanges） |
+
+**自动迁移**：`initDB()` 检测旧版数据库是否缺少 `print_options` 列，自动通过 `ALTER TABLE` 添加。
 
 **表 `audit_log`：**
 
@@ -213,11 +245,27 @@ Admin Web 在同一端口挂载 WebSocket，推送 `job:update` / `printer:updat
 |------|------|------|
 | id | INTEGER PK | 自增主键 |
 | job_id | TEXT | 关联任务 ID |
-| action | TEXT | 操作类型（create/status_change/cancel/retry/printer_add/printer_remove/printer_update/printer_default/printer_enable/printer_disable/api_clear_queues/api_restart_cups/api_diagnostics/maintenance_*） |
+| action | TEXT | 操作类型（create/status_change/cancel/retry/config_update/printer_add/printer_remove/printer_update/printer_default/printer_enable/printer_disable/api_clear_queues/api_restart_cups/api_diagnostics/maintenance_*） |
 | detail | TEXT | 操作详情 |
 | created_at | TEXT | 记录时间 |
 
 **索引**：`idx_jobs_status`、`idx_jobs_created_at`、`idx_jobs_template_id`、`idx_audit_log_job_id`
+
+### 打印参数持久化
+
+`src/jobs/manager.js` 中的 `extractPrintOptions()` 函数在任务提交时从 Socket.IO 数据中提取标准打印参数：
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `copies` | number | 打印份数 |
+| `duplex` | boolean | 是否双面打印 |
+| `duplexMode` | string | 双面模式（longEdge/shortEdge） |
+| `landscape` | boolean | 横向打印 |
+| `pageSize` | string | 纸张尺寸（A4/Letter 等） |
+| `color` | boolean | 彩色打印（false 为灰度） |
+| `pageRanges` | string | 页范围（如 "1-5,8"） |
+
+仅有实际值的参数会被提取并序列化为 JSON 存入 `print_options` 列，`rowToJob()` 读取时自动反序列化。这些参数通过 `src/printer/options.js` 的 `mapOptions()` 映射为 `lp` 命令行选项。
 
 ### 任务状态流转
 
@@ -269,16 +317,19 @@ received -> rendering -> printing -> done
    启用 `connectTransit` 不影响本地 Socket.IO Gateway(:17521) 的正常运行。两种模式通过 `clientId` 前缀 `transit:` 区分任务来源，回调互不干扰。
 
 9. **Admin 登录密码生成**
-   密码使用 bcrypt 哈希存储。可通过 `node -e "import('bcryptjs').then(b=>b.hash('your_password',10).then(console.log))"` 生成哈希值，填入 `config.admin.password`。
+   密码使用 bcrypt 哈希存储。可通过 `node -e "import('bcryptjs').then(b=>b.hash('your_password',10).then(console.log))"` 生成哈希值，填入 `config.admin.password`。也可通过 Admin Web 配置管理界面在线修改密码（自动哈希）。
 
 10. **Session 失效**
-    若未配置 `admin.sessionSecret`，每次服务重启所有已登录用户需重新登录。建议在 `config.json` 中设置固定的 `admin.sessionSecret` 值。
+    若未配置 `admin.sessionSecret`，每次服务重启所有已登录用户需重新登录。建议在 `config.json` 中设置固定的 `admin.sessionSecret` 值。`sessionSecret` 不可通过配置管理 API 修改。
 
 11. **Docker 环境下的机器 ID**
     Docker 容器内不信任系统 `/etc/machine-id`（镜像层共享），自动回退为 `data/machine-id` 持久化 UUID。通过 volume 挂载 `data/` 目录保证唯一性和持久性。
 
 12. **多 Agent 部署的 agentId**
     `config.agentId` 用于在多个 hiprint-agent 实例通过同一中转服务连接时唯一标识每个 Agent。为空时回退到系统 `machineId`。中转客户端连接时通过 `query.clientId` 传递该标识，打印机列表中注入 `agentId`/`agentHost`/`agentIp` 字段供 Web 端路由。
+
+13. **配置在线修改**
+    通过 `PUT /api/config` 可在线修改大部分配置项。部分参数（`port`/`adminPort`/`browserPoolSize`/`dbPath`/`allowEIO3`）修改后需重启服务才能生效，API 返回 `needRestart: true` 提示。敏感字段（token/password/sessionSecret）有特殊保护机制。
 
 ## 相关文件清单
 
@@ -289,7 +340,7 @@ hiprint-agent/
   CLAUDE.md                          # 本模块文档
   src/
     index.js                         # 主入口：按顺序启动所有子系统
-    config.js                        # 配置管理：加载/校验/更新/Proxy 只读导出
+    config.js                        # 配置管理：加载/校验/热更新(getConfig+updateConfig)/Proxy 只读导出
     logger.js                        # pino 日志：开发环境 pretty，生产环境 JSON
     gateway/
       server.js                      # Socket.IO Gateway 创建与配置（含 agentId 采集）
@@ -297,23 +348,23 @@ hiprint-agent/
       events.js                      # 事件注册 + enrichPrinterList()（多 Agent 标识注入）
       transit-client.js              # 中转客户端：连接 node-hiprint-transit 实现远程打印
     jobs/
-      manager.js                     # Job Manager：渲染队列 + 打印队列 + 状态机
-      store.js                       # better-sqlite3 持久化（jobs + audit_log）
+      manager.js                     # Job Manager：渲染队列 + 打印队列 + 状态机 + extractPrintOptions()
+      store.js                       # better-sqlite3 持久化（jobs + audit_log + 自动迁移）
       types.js                       # JobStatus / JobType 枚举 + JSDoc 类型
     renderer/
       pool.js                        # Playwright 浏览器池（页面复用 + 信号量）
       html-to-pdf.js                 # HTML -> PDF 渲染
       html-to-jpeg.js                # HTML -> JPEG 截图
-      resources.js                   # 字体/条码/二维码资源注入
+      resources.js                   # 条码/二维码/CJK 字体资源注入（本地优先，CDN 降级）
     printer/
       adapter.js                     # 打印适配器（面向 Job Manager 的高级接口）
       admin.js                       # 打印机管理服务（CRUD + 输入校验 + 审计日志）
       cups.js                        # CUPS 命令封装（lpstat/lp/lpadmin/cupsenable/cupsdisable/cancel）
-      options.js                     # 打印选项映射（copies/duplex/paper）
+      options.js                     # 打印选项映射（copies/duplex/landscape/pageSize/color/pageRanges -> lp 参数）
     maintenance/
       service.js                     # 维护服务（队列清空/CUPS 重启/连通性检测/日志/诊断）
     web/
-      server.js                      # Express Admin Web 服务（含 session + bcrypt 登录认证）
+      server.js                      # Express Admin Web 服务（含 session + bcrypt 登录认证 + 配置路由注册）
       socket.js                      # Admin WebSocket 推送
       middleware/
         auth.js                      # 认证中间件（白名单路径 + session 检查）
@@ -324,6 +375,7 @@ hiprint-agent/
         jobs.js                      # GET/POST /api/jobs（含预览端点）
         metrics.js                   # GET /metrics (Prometheus)
         maintenance.js               # POST/GET /api/maintenance/*（维护与诊断）
+        config.js                    # GET/PUT /api/config（系统配置查看与在线修改，含脱敏/密码哈希/重启标记/审计日志）
     utils/
       network.js                     # 网络地址获取
       system.js                      # 系统信息采集（含 machineId + Docker 检测）
@@ -335,7 +387,7 @@ hiprint-agent/
         custom.css                   # 管理面板主样式（企业级暗色主题 + 移动端适配）
         login.css                    # 登录页样式
       js/
-        app.js                       # Vue 3 前端应用（仪表盘/打印机管理/任务/维护/日志）
+        app.js                       # Vue 3 前端应用（仪表盘/打印机管理/任务/维护/配置/日志）
         login.js                     # 登录页前端逻辑
       vendor/
         .gitkeep                     # 第三方库占位
@@ -353,6 +405,7 @@ hiprint-agent/
 
 | 时间 | 操作 | 说明 |
 |------|------|------|
+| 2026-02-19T23:21:46+08:00 | 增量更新 | 新增系统配置管理功能：config.js 新增 getConfig()/updateConfig() 热更新函数；新增 src/web/routes/config.js 配置路由（GET/PUT /api/config，含脱敏/密码哈希/重启标记/审计日志）；jobs 表新增 print_options 列（含自动迁移）；manager.js 新增 extractPrintOptions() 打印参数提取与持久化；审计日志新增 config_update 操作类型；新增 FAQ 第 13 条（配置在线修改说明） |
 | 2026-02-19T20:46:42+08:00 | 增量更新 | 新增 agentId 配置项文档（多 Agent 部署唯一标识，config.json + config.js 校验 + server.js/transit-client.js/events.js 使用）；新增 enrichPrinterList 函数说明（打印机列表来源标识注入）；补充 docs/ 目录引用（protocol.md 协议文档 + ops.md 运维手册）；新增 FAQ 第 12 条（多 Agent 部署说明） |
 | 2026-02-19T17:56:37+08:00 | 增量更新 | 新增 Admin 登录认证系统（express-session + bcryptjs）；新增打印机 CRUD 管理（admin.js + cups.js 扩展 + printers 路由扩展）；新增维护诊断系统（maintenance/service.js + 路由）；新增 Dockerfile 多阶段构建和 install.sh 一键安装脚本；Admin Web 前端大幅改版为企业级暗色响应式主题；新增任务预览功能；新增 previewDir 和 admin 配置项；依赖新增 bcryptjs/express-session/node-machine-id |
 | 2026-02-19T11:58:59+08:00 | 功能新增 | 新增中转客户端模块（transit-client.js）：支持连接 node-hiprint-transit 实现跨网段远程打印；更新配置校验、启动流程、Admin 状态接口 |
