@@ -532,6 +532,295 @@
         <p v-else class="empty-state" style="padding:32px 0">点击"加载日志"查看 CUPS 错误日志</p>
       </section>
 
+      <!-- Settings 系统配置视图 -->
+      <section v-if="currentTab === 'settings'" class="view-section">
+        <div class="settings-header">
+          <h4 class="view-title">系统配置</h4>
+          <button class="btn-sm btn-primary" @click="confirmSaveSettings" :disabled="settingsSaving || settingsLoading">
+            {{ settingsSaving ? '保存中...' : '保存修改' }}
+          </button>
+        </div>
+
+        <!-- 加载态 -->
+        <div v-if="settingsLoading" class="settings-loading">正在加载配置...</div>
+
+        <!-- 配置表单 -->
+        <div v-if="settingsConfig && !settingsLoading" class="settings-grid">
+
+          <!-- 1. 网络配置 -->
+          <div class="config-card">
+            <div class="config-card-title">网络配置</div>
+
+            <div class="config-group">
+              <label class="config-label">
+                Socket.IO 端口
+                <span v-if="isRestartRequired('port')" class="restart-badge">需重启</span>
+              </label>
+              <input type="number" class="form-input" v-model.number="settingsConfig.port" min="1024" max="65535"
+                     :class="{ 'form-input-error': settingsErrors.port }">
+              <small v-if="settingsErrors.port" class="form-error">{{ settingsErrors.port }}</small>
+              <small class="config-hint">范围 1024-65535</small>
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">
+                Admin Web 端口
+                <span v-if="isRestartRequired('adminPort')" class="restart-badge">需重启</span>
+              </label>
+              <input type="number" class="form-input" v-model.number="settingsConfig.adminPort" min="1024" max="65535"
+                     :class="{ 'form-input-error': settingsErrors.adminPort }">
+              <small v-if="settingsErrors.adminPort" class="form-error">{{ settingsErrors.adminPort }}</small>
+              <small class="config-hint">范围 1024-65535</small>
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">认证 Token</label>
+              <div class="password-input-wrap">
+                <input :type="showTokenField ? 'text' : 'password'" class="form-input" v-model="settingsConfig.token"
+                       placeholder="留空则跳过认证">
+                <button class="password-toggle" @click="showTokenField = !showTokenField" type="button">
+                  {{ showTokenField ? '隐藏' : '显示' }}
+                </button>
+              </div>
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">IP 白名单</label>
+              <div class="tag-input-row">
+                <input class="form-input" v-model="newIpInput" @keyup.enter="addIpWhitelist" placeholder="输入 IP 后回车添加">
+                <button class="btn-sm btn-outline" @click="addIpWhitelist" type="button">添加</button>
+              </div>
+              <div class="tag-list" v-if="settingsConfig.ipWhitelist && settingsConfig.ipWhitelist.length > 0">
+                <span v-for="(ip, idx) in settingsConfig.ipWhitelist" :key="idx" class="tag-item">
+                  {{ ip }}
+                  <button class="tag-remove" @click="removeIpWhitelist(idx)" type="button">&times;</button>
+                </span>
+              </div>
+              <small class="config-hint">空列表表示不限制</small>
+            </div>
+
+            <div class="config-row">
+              <label class="config-label">
+                兼容 EIO3 协议
+                <span v-if="isRestartRequired('allowEIO3')" class="restart-badge">需重启</span>
+              </label>
+              <label class="toggle-switch">
+                <input type="checkbox" v-model="settingsConfig.allowEIO3">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">CORS Origin</label>
+              <input type="text" class="form-input" v-model="settingsConfig.cors.origin" placeholder="*">
+              <small class="config-hint">跨域来源，* 表示允许所有</small>
+            </div>
+          </div>
+
+          <!-- 2. 渲染配置 -->
+          <div class="config-card">
+            <div class="config-card-title">渲染配置</div>
+
+            <div class="config-group">
+              <label class="config-label">渲染并发数</label>
+              <input type="number" class="form-input" v-model.number="settingsConfig.renderConcurrency" min="1" max="20"
+                     :class="{ 'form-input-error': settingsErrors.renderConcurrency }">
+              <small v-if="settingsErrors.renderConcurrency" class="form-error">{{ settingsErrors.renderConcurrency }}</small>
+              <small class="config-hint">范围 1-20</small>
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">
+                浏览器池大小
+                <span v-if="isRestartRequired('browserPoolSize')" class="restart-badge">需重启</span>
+              </label>
+              <input type="number" class="form-input" v-model.number="settingsConfig.browserPoolSize" min="1" max="20"
+                     :class="{ 'form-input-error': settingsErrors.browserPoolSize }">
+              <small v-if="settingsErrors.browserPoolSize" class="form-error">{{ settingsErrors.browserPoolSize }}</small>
+              <small class="config-hint">范围 1-20，每个页面约 80-150MB 内存</small>
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">页面复用次数</label>
+              <input type="number" class="form-input" v-model.number="settingsConfig.pageReuseLimit" min="1">
+              <small class="config-hint">超过后自动重建页面</small>
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">渲染超时 (ms)</label>
+              <input type="number" class="form-input" v-model.number="settingsConfig.renderTimeout" min="1000">
+              <small class="config-hint">单位毫秒，建议 10000-60000</small>
+            </div>
+          </div>
+
+          <!-- 3. 打印配置 -->
+          <div class="config-card">
+            <div class="config-card-title">打印配置</div>
+
+            <div class="config-group">
+              <label class="config-label">打印并发数</label>
+              <input type="number" class="form-input" v-model.number="settingsConfig.printConcurrency" min="1" max="20"
+                     :class="{ 'form-input-error': settingsErrors.printConcurrency }">
+              <small v-if="settingsErrors.printConcurrency" class="form-error">{{ settingsErrors.printConcurrency }}</small>
+              <small class="config-hint">范围 1-20</small>
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">打印超时 (ms)</label>
+              <input type="number" class="form-input" v-model.number="settingsConfig.printTimeout" min="1000">
+              <small class="config-hint">单位毫秒</small>
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">默认打印机</label>
+              <input type="text" class="form-input" v-model="settingsConfig.defaultPrinter" placeholder="留空使用系统默认">
+            </div>
+          </div>
+
+          <!-- 4. 队列与存储 -->
+          <div class="config-card">
+            <div class="config-card-title">队列与存储</div>
+
+            <div class="config-group">
+              <label class="config-label">最大队列数</label>
+              <input type="number" class="form-input" v-model.number="settingsConfig.maxQueueSize" min="1" max="10000"
+                     :class="{ 'form-input-error': settingsErrors.maxQueueSize }">
+              <small v-if="settingsErrors.maxQueueSize" class="form-error">{{ settingsErrors.maxQueueSize }}</small>
+              <small class="config-hint">范围 1-10000</small>
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">任务保留天数</label>
+              <input type="number" class="form-input" v-model.number="settingsConfig.jobRetentionDays" min="1">
+              <small class="config-hint">超过天数的任务将被自动清理</small>
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">日志级别</label>
+              <select class="config-select" v-model="settingsConfig.logLevel">
+                <option v-for="level in logLevelOptions" :key="level" :value="level">{{ level }}</option>
+              </select>
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">
+                数据库路径
+                <span v-if="isRestartRequired('dbPath')" class="restart-badge">需重启</span>
+              </label>
+              <input type="text" class="form-input" v-model="settingsConfig.dbPath" placeholder="./data/hiprint.db">
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">PDF 临时目录</label>
+              <input type="text" class="form-input" v-model="settingsConfig.pdfDir" placeholder="./data/pdf">
+            </div>
+
+            <div class="config-group">
+              <label class="config-label">日志目录</label>
+              <input type="text" class="form-input" v-model="settingsConfig.logDir" placeholder="./logs">
+            </div>
+          </div>
+
+          <!-- 5. 中转服务 -->
+          <div class="config-card">
+            <div class="config-card-title">中转服务</div>
+
+            <div class="config-row">
+              <label class="config-label">启用中转客户端</label>
+              <label class="toggle-switch">
+                <input type="checkbox" v-model="settingsConfig.connectTransit">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <template v-if="settingsConfig.connectTransit">
+              <div class="config-group">
+                <label class="config-label">中转服务地址</label>
+                <input type="text" class="form-input" v-model="settingsConfig.transitUrl"
+                       placeholder="http://transit.example.com:17521">
+              </div>
+
+              <div class="config-group">
+                <label class="config-label">中转 Token</label>
+                <div class="password-input-wrap">
+                  <input :type="showTransitTokenField ? 'text' : 'password'" class="form-input"
+                         v-model="settingsConfig.transitToken" placeholder="中转服务认证 Token">
+                  <button class="password-toggle" @click="showTransitTokenField = !showTransitTokenField" type="button">
+                    {{ showTransitTokenField ? '隐藏' : '显示' }}
+                  </button>
+                </div>
+              </div>
+            </template>
+
+            <div class="config-group">
+              <label class="config-label">Agent ID</label>
+              <input type="text" class="form-input" v-model="settingsConfig.agentId"
+                     placeholder="留空则自动生成">
+              <small class="config-hint">中转模式下的稳定标识</small>
+            </div>
+          </div>
+
+          <!-- 6. 管理员 -->
+          <div class="config-card">
+            <div class="config-card-title">管理员</div>
+
+            <div class="config-group">
+              <label class="config-label">用户名</label>
+              <input type="text" class="form-input" v-model="settingsConfig.admin.username">
+            </div>
+
+            <div class="config-group">
+              <div class="config-row" style="padding:0 0 8px">
+                <label class="config-label" style="margin:0">修改密码</label>
+                <button class="btn-sm btn-outline" @click="showPasswordSection = !showPasswordSection" type="button">
+                  {{ showPasswordSection ? '取消' : '修改' }}
+                </button>
+              </div>
+
+              <div v-if="showPasswordSection" class="password-section">
+                <div class="config-group">
+                  <label class="config-label">新密码</label>
+                  <input type="password" class="form-input" v-model="passwordForm.newPassword"
+                         placeholder="至少 6 个字符"
+                         :class="{ 'form-input-error': settingsErrors.newPassword }">
+                  <small v-if="settingsErrors.newPassword" class="form-error">{{ settingsErrors.newPassword }}</small>
+                </div>
+                <div class="config-group">
+                  <label class="config-label">确认密码</label>
+                  <input type="password" class="form-input" v-model="passwordForm.confirmPassword"
+                         placeholder="再次输入新密码"
+                         :class="{ 'form-input-error': settingsErrors.confirmPassword }">
+                  <small v-if="settingsErrors.confirmPassword" class="form-error">{{ settingsErrors.confirmPassword }}</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- 保存配置确认对话框 -->
+      <div class="modal-overlay" v-if="showSaveConfirm" @click.self="cancelSaveSettings">
+        <div class="modal modal-sm confirm-dialog" @keydown.esc="cancelSaveSettings" tabindex="-1">
+          <div class="modal-header">
+            <h5>确认保存配置</h5>
+            <button class="modal-close" @click="cancelSaveSettings">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="save-confirm-hint">
+              注意：标记为"需重启"的参数修改后，需要重启服务才能生效。
+            </div>
+            <p>确定要保存当前配置吗？</p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-sm btn-ghost" @click="cancelSaveSettings">取消</button>
+            <button class="btn-sm btn-primary" @click="saveSettings" :disabled="settingsSaving">
+              {{ settingsSaving ? '保存中...' : '确认保存' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Logs 视图 -->
       <section v-if="currentTab === 'logs'" class="view-section">
         <h4 class="view-title">日志记录</h4>

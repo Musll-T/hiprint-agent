@@ -24,7 +24,7 @@ services:
       # 持久化日志目录
       - hiprint-logs:/app/logs
       # 只读挂载配置文件
-      - ./config.json:/app/config.json:ro
+      - ./config.json:/app/config.json
       # 如需访问宿主机 CUPS 打印服务，取消下行注释
       # - /var/run/cups:/var/run/cups
     environment:

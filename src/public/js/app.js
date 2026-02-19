@@ -98,6 +98,7 @@ const app = createApp({
       { key: 'printers',  label: '打印机', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>' },
       { key: 'jobs',      label: '任务',   icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="13" y2="16"></line></svg>' },
       { key: 'maintenance', label: '维护', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>' },
+      { key: 'settings',  label: '配置',   icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>' },
       { key: 'logs',      label: '日志',   icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>' },
     ];
 
@@ -229,6 +230,46 @@ const app = createApp({
 
     /** 预览错误信息 */
     const previewError = ref('');
+
+    // ----------------------------------------------------------
+    // 系统配置 - 状态
+    // ----------------------------------------------------------
+
+    /** 配置表单数据 */
+    const settingsConfig = ref(null);
+
+    /** 原始配置（用于脏检查） */
+    const settingsOriginal = ref(null);
+
+    /** 配置加载中 */
+    const settingsLoading = ref(false);
+
+    /** 配置保存中 */
+    const settingsSaving = ref(false);
+
+    /** 需要重启的字段列表（从 API 返回） */
+    const restartRequiredKeys = ref([]);
+
+    /** 密码修改表单 */
+    const passwordForm = ref({ newPassword: '', confirmPassword: '' });
+
+    /** 是否展开密码修改区域 */
+    const showPasswordSection = ref(false);
+
+    /** token 显示/隐藏 */
+    const showTokenField = ref(false);
+
+    /** transitToken 显示/隐藏 */
+    const showTransitTokenField = ref(false);
+
+    /** IP 白名单新增输入 */
+    const newIpInput = ref('');
+
+    /** 保存确认对话框 */
+    const showSaveConfirm = ref(false);
+
+    /** 配置校验错误 */
+    const settingsErrors = ref({});
 
     // ----------------------------------------------------------
     // 任务过滤选项
@@ -952,6 +993,201 @@ const app = createApp({
     }
 
     // ----------------------------------------------------------
+    // 系统配置 - 方法
+    // ----------------------------------------------------------
+
+    /** 日志级别选项 */
+    const logLevelOptions = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
+
+    /** 加载系统配置 */
+    async function loadSettings() {
+      if (settingsLoading.value) return;
+      settingsLoading.value = true;
+      settingsErrors.value = {};
+      try {
+        const data = await fetchJSON('/api/config');
+        // 提取元数据
+        if (data._meta) {
+          restartRequiredKeys.value = data._meta.restartRequired || [];
+          delete data._meta;
+        }
+        // 确保嵌套对象存在
+        if (!data.cors) data.cors = { origin: '*', methods: ['GET', 'POST'] };
+        if (!data.admin) data.admin = { username: '', password: '' };
+        if (!data.ipWhitelist) data.ipWhitelist = [];
+
+        settingsConfig.value = data;
+        settingsOriginal.value = JSON.parse(JSON.stringify(data));
+        // 重置密码表单
+        passwordForm.value = { newPassword: '', confirmPassword: '' };
+        showPasswordSection.value = false;
+      } catch (err) {
+        showToast('加载配置失败: ' + err.message, 'error');
+      } finally {
+        settingsLoading.value = false;
+      }
+    }
+
+    /**
+     * 判断字段是否需要重启
+     * @param {string} key - 配置字段名
+     * @returns {boolean}
+     */
+    function isRestartRequired(key) {
+      return restartRequiredKeys.value.includes(key);
+    }
+
+    /** 添加 IP 到白名单 */
+    function addIpWhitelist() {
+      const ip = newIpInput.value.trim();
+      if (!ip) return;
+      // 简单格式校验
+      if (!/^[\d.:a-fA-F]+$/.test(ip)) {
+        showToast('IP 地址格式不正确', 'error');
+        return;
+      }
+      if (!settingsConfig.value.ipWhitelist) {
+        settingsConfig.value.ipWhitelist = [];
+      }
+      if (settingsConfig.value.ipWhitelist.includes(ip)) {
+        showToast('该 IP 已存在', 'warning');
+        return;
+      }
+      settingsConfig.value.ipWhitelist.push(ip);
+      newIpInput.value = '';
+    }
+
+    /**
+     * 从白名单移除 IP
+     * @param {number} index - 数组索引
+     */
+    function removeIpWhitelist(index) {
+      settingsConfig.value.ipWhitelist.splice(index, 1);
+    }
+
+    /**
+     * 前端校验配置
+     * @returns {boolean} 是否通过
+     */
+    function validateSettings() {
+      const errors = {};
+      const cfg = settingsConfig.value;
+
+      if (cfg.port !== undefined && cfg.port !== '') {
+        const p = Number(cfg.port);
+        if (!Number.isInteger(p) || p < 1024 || p > 65535) {
+          errors.port = '端口范围 1024-65535';
+        }
+      }
+      if (cfg.adminPort !== undefined && cfg.adminPort !== '') {
+        const p = Number(cfg.adminPort);
+        if (!Number.isInteger(p) || p < 1024 || p > 65535) {
+          errors.adminPort = '端口范围 1024-65535';
+        }
+      }
+      if (cfg.renderConcurrency !== undefined && cfg.renderConcurrency !== '') {
+        const v = Number(cfg.renderConcurrency);
+        if (!Number.isInteger(v) || v < 1 || v > 20) {
+          errors.renderConcurrency = '范围 1-20';
+        }
+      }
+      if (cfg.printConcurrency !== undefined && cfg.printConcurrency !== '') {
+        const v = Number(cfg.printConcurrency);
+        if (!Number.isInteger(v) || v < 1 || v > 20) {
+          errors.printConcurrency = '范围 1-20';
+        }
+      }
+      if (cfg.browserPoolSize !== undefined && cfg.browserPoolSize !== '') {
+        const v = Number(cfg.browserPoolSize);
+        if (!Number.isInteger(v) || v < 1 || v > 20) {
+          errors.browserPoolSize = '范围 1-20';
+        }
+      }
+      if (cfg.maxQueueSize !== undefined && cfg.maxQueueSize !== '') {
+        const v = Number(cfg.maxQueueSize);
+        if (!Number.isInteger(v) || v < 1 || v > 10000) {
+          errors.maxQueueSize = '范围 1-10000';
+        }
+      }
+
+      // 密码校验
+      if (showPasswordSection.value && passwordForm.value.newPassword) {
+        if (passwordForm.value.newPassword.length < 6) {
+          errors.newPassword = '密码长度至少 6 个字符';
+        }
+        if (passwordForm.value.newPassword !== passwordForm.value.confirmPassword) {
+          errors.confirmPassword = '两次输入的密码不一致';
+        }
+      }
+
+      settingsErrors.value = errors;
+      return Object.keys(errors).length === 0;
+    }
+
+    /** 显示保存确认对话框 */
+    function confirmSaveSettings() {
+      if (!validateSettings()) {
+        showToast('请修正表单中的错误', 'error');
+        return;
+      }
+      showSaveConfirm.value = true;
+    }
+
+    /** 取消保存确认 */
+    function cancelSaveSettings() {
+      showSaveConfirm.value = false;
+    }
+
+    /** 执行保存配置 */
+    async function saveSettings() {
+      showSaveConfirm.value = false;
+      if (settingsSaving.value) return;
+      settingsSaving.value = true;
+
+      try {
+        // 构造 partial 更新对象
+        const payload = JSON.parse(JSON.stringify(settingsConfig.value));
+
+        // 处理密码
+        if (showPasswordSection.value && passwordForm.value.newPassword) {
+          if (!payload.admin) payload.admin = {};
+          payload.admin.password = passwordForm.value.newPassword;
+        } else {
+          // 不修改密码：删除 password 字段
+          if (payload.admin) {
+            delete payload.admin.password;
+          }
+        }
+
+        const data = await putJSON('/api/config', payload);
+
+        if (data.needRestart) {
+          showToast('配置已保存，部分参数需要重启服务后生效', 'warning');
+        } else {
+          showToast('配置已保存', 'success');
+        }
+
+        // 刷新配置
+        if (data.config) {
+          const cfg = data.config;
+          if (!cfg.cors) cfg.cors = { origin: '*', methods: ['GET', 'POST'] };
+          if (!cfg.admin) cfg.admin = { username: '', password: '' };
+          if (!cfg.ipWhitelist) cfg.ipWhitelist = [];
+          settingsConfig.value = cfg;
+          settingsOriginal.value = JSON.parse(JSON.stringify(cfg));
+        }
+
+        // 重置密码表单
+        passwordForm.value = { newPassword: '', confirmPassword: '' };
+        showPasswordSection.value = false;
+      } catch (err) {
+        showToast('保存失败: ' + err.message, 'error');
+      } finally {
+        settingsSaving.value = false;
+      }
+    }
+
+    // ----------------------------------------------------------
     // 日志记录
     // ----------------------------------------------------------
 
@@ -1120,6 +1356,7 @@ const app = createApp({
       if (tab === 'printers') loadPrinters();
       if (tab === 'jobs') loadJobs();
       if (tab === 'maintenance') loadCupsStatus();
+      if (tab === 'settings') loadSettings();
     });
 
     // ----------------------------------------------------------
@@ -1219,6 +1456,29 @@ const app = createApp({
       onPreviewLoad,
       onPreviewError,
       closePreview,
+
+      // 系统配置
+      settingsConfig,
+      settingsOriginal,
+      settingsLoading,
+      settingsSaving,
+      settingsErrors,
+      restartRequiredKeys,
+      passwordForm,
+      showPasswordSection,
+      showTokenField,
+      showTransitTokenField,
+      newIpInput,
+      showSaveConfirm,
+      logLevelOptions,
+      loadSettings,
+      isRestartRequired,
+      addIpWhitelist,
+      removeIpWhitelist,
+      validateSettings,
+      confirmSaveSettings,
+      cancelSaveSettings,
+      saveSettings,
     };
   },
 });

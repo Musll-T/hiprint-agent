@@ -153,9 +153,7 @@ export function updateConfig(partial) {
     throw new Error('配置尚未加载，请先调用 loadConfig()');
   }
 
-  // 先校验待合并的部分
-  validateConfig(partial);
-
+  // partial 是部分更新，字段可能不完整，仅对合并后的完整配置做校验
   // 浅合并（cors 等嵌套对象需要单独处理）
   const merged = { ..._config };
   for (const [key, value] of Object.entries(partial)) {

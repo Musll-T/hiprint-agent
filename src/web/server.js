@@ -21,6 +21,7 @@ import { printerRoutes } from './routes/printers.js';
 import { jobRoutes } from './routes/jobs.js';
 import { metricsRoutes } from './routes/metrics.js';
 import { maintenanceRoutes } from './routes/maintenance.js';
+import { configRoutes } from './routes/config.js';
 import { createAdminSocket } from './socket.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 
@@ -166,6 +167,7 @@ export async function createAdminWeb({ config, jobManager, printerAdapter, print
   jobRoutes(app, deps);
   metricsRoutes(app, deps);
   maintenanceRoutes(app, deps);
+  configRoutes(app, deps);
 
   // ============================================================
   // 全局错误处理中间件
