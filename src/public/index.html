@@ -306,6 +306,7 @@
                 <th>ID</th>
                 <th>模板</th>
                 <th>打印机</th>
+                <th>参数</th>
                 <th>状态</th>
                 <th>创建时间</th>
                 <th>操作</th>
@@ -316,6 +317,18 @@
                 <td><code>{{ shortId(job.id) }}</code></td>
                 <td>{{ job.templateId || '--' }}</td>
                 <td>{{ job.printer || '--' }}</td>
+                <td>
+                  <div class="print-opts" v-if="formatPrintOptions(job.printOptions).length > 0">
+                    <span
+                      v-for="(tag, i) in formatPrintOptions(job.printOptions)"
+                      :key="i"
+                      class="opt-tag"
+                      :class="tag.cssClass"
+                      :title="tag.title || ''"
+                    >{{ tag.label }}</span>
+                  </div>
+                  <span v-else class="text-muted">&mdash;</span>
+                </td>
                 <td><span class="badge" :class="jobBadgeClass(job.status)">{{ jobStatusText(job.status) }}</span></td>
                 <td>{{ formatTime(job.createdAt) }}</td>
                 <td class="job-actions">
@@ -350,6 +363,15 @@
             <div class="job-card-body">
               <p><small class="text-muted">模板：</small>{{ job.templateId || '--' }}</p>
               <p><small class="text-muted">打印机：</small>{{ job.printer || '--' }}</p>
+              <div class="print-opts" v-if="formatPrintOptions(job.printOptions).length > 0" style="margin:6px 0">
+                <span
+                  v-for="(tag, i) in formatPrintOptions(job.printOptions)"
+                  :key="i"
+                  class="opt-tag"
+                  :class="tag.cssClass"
+                  :title="tag.title || ''"
+                >{{ tag.label }}</span>
+              </div>
               <p><small class="text-muted">时间：</small>{{ formatTime(job.createdAt) }}</p>
             </div>
             <div class="job-card-actions">

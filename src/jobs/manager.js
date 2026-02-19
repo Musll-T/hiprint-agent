@@ -32,6 +32,37 @@ import { renderJPEG } from '../renderer/html-to-jpeg.js';
 /** 最大重试次数 */
 const MAX_RETRY_COUNT = 3;
 
+/**
+ * 标准打印参数字段列表（与 printer/options.js mapOptions 对齐）
+ * 仅这些字段会被提取并持久化到数据库
+ */
+const PRINT_OPTION_KEYS = ['copies', 'duplex', 'duplexMode', 'landscape', 'pageSize', 'color', 'pageRanges'];
+
+/**
+ * 从 Socket.IO data 对象中提取标准打印参数
+ *
+ * 仅提取有实际值的字段，跳过 undefined/null，
+ * 避免将 html/printer/templateId 等非打印参数混入。
+ *
+ * @param {object} options - 原始 options 对象（通常为整个 Socket.IO data）
+ * @returns {string|null} JSON 字符串，无有效参数时返回 null
+ */
+function extractPrintOptions(options) {
+  if (!options || typeof options !== 'object') return null;
+
+  const extracted = {};
+  let hasValue = false;
+
+  for (const key of PRINT_OPTION_KEYS) {
+    if (options[key] !== undefined && options[key] !== null) {
+      extracted[key] = options[key];
+      hasValue = true;
+    }
+  }
+
+  return hasValue ? JSON.stringify(extracted) : null;
+}
+
 /** 需要渲染的任务类型集合 */
 const RENDER_REQUIRED_TYPES = new Set([
   JobType.HTML,
@@ -136,6 +167,7 @@ export function createJobManager({ rendererPool, printerAdapter, config }) {
       clientId: jobData.clientId || null,
       tenantId: jobData.tenantId || null,
       pageNum: jobData.pageNum ?? null,
+      printOptions: extractPrintOptions(jobData.options),
     });
 
     // 在内存中保存不持久化的上下文数据

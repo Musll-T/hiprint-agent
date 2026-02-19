@@ -41,6 +41,14 @@ let stmtCountByStatus = null;
  */
 function rowToJob(row) {
   if (!row) return null;
+  let printOptions = null;
+  if (row.print_options) {
+    try {
+      printOptions = JSON.parse(row.print_options);
+    } catch {
+      // JSON 解析失败时忽略，保持 null
+    }
+  }
   return {
     id: row.id,
     status: row.status,
@@ -57,6 +65,7 @@ function rowToJob(row) {
     htmlHash: row.html_hash,
     retryCount: row.retry_count,
     pageNum: row.page_num,
+    printOptions,
   };
 }
 
@@ -130,9 +139,17 @@ export function initDB(dbPath) {
       error_msg TEXT,
       html_hash TEXT,
       retry_count INTEGER DEFAULT 0,
-      page_num INTEGER
+      page_num INTEGER,
+      print_options TEXT
     )
   `);
+
+  // 已有数据库迁移：为旧版 jobs 表添加 print_options 列
+  const columns = db.pragma('table_info(jobs)');
+  if (!columns.some((col) => col.name === 'print_options')) {
+    db.exec('ALTER TABLE jobs ADD COLUMN print_options TEXT');
+    log.info('数据库迁移：已添加 print_options 列');
+  }
 
   // 创建 audit_log 表
   db.exec(`
@@ -157,10 +174,10 @@ export function initDB(dbPath) {
   stmtInsertJob = db.prepare(`
     INSERT INTO jobs (id, status, printer, template_id, type, client_id, tenant_id,
                       created_at, updated_at, render_duration, print_duration,
-                      error_msg, html_hash, retry_count, page_num)
+                      error_msg, html_hash, retry_count, page_num, print_options)
     VALUES (@id, @status, @printer, @template_id, @type, @client_id, @tenant_id,
             @created_at, @updated_at, @render_duration, @print_duration,
-            @error_msg, @html_hash, @retry_count, @page_num)
+            @error_msg, @html_hash, @retry_count, @page_num, @print_options)
   `);
 
   stmtUpdateStatus = db.prepare(`
@@ -226,6 +243,7 @@ export function createJob(job) {
     html_hash: job.htmlHash || null,
     retry_count: job.retryCount ?? 0,
     page_num: job.pageNum ?? null,
+    print_options: job.printOptions || null,
   };
 
   stmtInsertJob.run(record);

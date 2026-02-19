@@ -425,6 +425,58 @@ const app = createApp({
       return status === 'failed' || status === 'cancelled';
     }
 
+    /**
+     * 将 printOptions 对象转换为可展示的标签数组
+     *
+     * 每个标签包含 { label, cssClass, title? }，其中 title 用于悬浮提示。
+     * printOptions 为 null/undefined 时返回空数组。
+     *
+     * @param {object|null} options - 打印参数对象
+     * @returns {Array<{label: string, cssClass: string, title?: string}>}
+     */
+    function formatPrintOptions(options) {
+      if (!options || typeof options !== 'object') return [];
+
+      const tags = [];
+
+      // 纸张尺寸（最高优先级）
+      if (options.pageSize) {
+        tags.push({ label: options.pageSize, cssClass: 'opt-size' });
+      }
+
+      // 色彩模式
+      if (options.color === true) {
+        tags.push({ label: '彩色', cssClass: 'opt-color' });
+      } else if (options.color === false) {
+        tags.push({ label: '黑白', cssClass: 'opt-mono' });
+      }
+
+      // 双面打印
+      if (options.duplex === true || options.duplexMode) {
+        const mode = options.duplexMode === 'shortEdge' ? '短边' : '长边';
+        tags.push({ label: '双面·' + mode, cssClass: 'opt-duplex' });
+      }
+
+      // 横向打印
+      if (options.landscape === true) {
+        tags.push({ label: '横向', cssClass: 'opt-landscape' });
+      }
+
+      // 打印份数（仅 > 1 时显示）
+      if (options.copies != null && options.copies > 1) {
+        tags.push({ label: '\u00d7' + options.copies, cssClass: 'opt-copies' });
+      }
+
+      // 页码范围
+      if (options.pageRanges) {
+        const range = String(options.pageRanges);
+        const display = range.length > 8 ? range.substring(0, 8) + '...' : range;
+        tags.push({ label: 'P:' + display, cssClass: 'opt-range', title: range.length > 8 ? range : undefined });
+      }
+
+      return tags;
+    }
+
     // ----------------------------------------------------------
     // Toast 提示
     // ----------------------------------------------------------
@@ -1108,6 +1160,7 @@ const app = createApp({
       jobBadgeClass,
       canCancel,
       canRetry,
+      formatPrintOptions,
 
       // 操作
       loadJobs,
