@@ -1,33 +1,47 @@
 # =============================================================================
 # HiPrint Agent - 无头打印服务 Docker 镜像
 # 基于 Playwright 官方镜像，已包含 Chromium 及系统依赖
+# 使用多阶段构建分离编译环境和运行环境以减小镜像体积
 # =============================================================================
 
-FROM mcr.microsoft.com/playwright:v1.49.0-noble
+# ---- 阶段 1：构建依赖 ----
+FROM mcr.microsoft.com/playwright:v1.58.2-noble AS builder
 
-# 安装 CUPS 客户端、CJK 字体、原生模块编译工具链
-# build-essential + python3: better-sqlite3 的 node-gyp 编译所需
+# 安装原生模块编译工具链（仅在构建阶段需要）
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    cups-client \
-    fonts-noto-cjk \
-    fonts-noto-cjk-extra \
     build-essential \
     python3 \
     && rm -rf /var/lib/apt/lists/*
 
-# 设置工作目录
 WORKDIR /app
 
 # 先复制 package.json 和 lock 文件，利用 Docker 构建缓存层
 COPY package.json package-lock.json* ./
 
-# 安装生产依赖（不使用 --ignore-scripts，better-sqlite3 需要编译原生模块）
-# 然后下载与项目版本匹配的 Chromium 浏览器
-RUN npm install --production && \
-    npx playwright install chromium
+# 安装生产依赖（better-sqlite3 需要编译原生模块）
+RUN npm ci --omit=dev && \
+    npm cache clean --force
 
-# 复制项目源码
-COPY . .
+# ---- 阶段 2：运行时镜像 ----
+FROM mcr.microsoft.com/playwright:v1.58.2-noble
+
+# 安装 CUPS 客户端和 CJK 字体（中日韩文字渲染支持）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cups-client \
+    fonts-noto-cjk \
+    fonts-noto-cjk-extra \
+    && rm -rf /var/lib/apt/lists/*
+
+# 设置工作目录
+WORKDIR /app
+
+# 从构建阶段复制已编译的 node_modules（无需 build-essential/python3）
+COPY --from=builder /app/node_modules ./node_modules
+
+# 复制项目源码和配置
+COPY package.json ./
+COPY src ./src
+COPY config.json* ./
 
 # 创建数据目录和日志目录（运行时可通过 volume 挂载覆盖）
 RUN mkdir -p /app/data /app/logs

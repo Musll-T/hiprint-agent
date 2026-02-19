@@ -325,10 +325,21 @@ export function listJobs(options = {}) {
 /**
  * 统计各状态的任务数量
  *
+ * 使用 2 秒缓存减少频繁 GROUP BY 全表扫描的开销（Admin WebSocket 每 5 秒调用一次）。
+ *
  * @returns {Record<string, number>} 以状态为键、数量为值的对象
  */
+let _statsCache = null;
+let _statsCacheTime = 0;
+const STATS_CACHE_TTL_MS = 2000;
+
 export function getJobStats() {
   ensureDB();
+
+  const now = Date.now();
+  if (_statsCache && now - _statsCacheTime < STATS_CACHE_TTL_MS) {
+    return _statsCache;
+  }
 
   // 初始化所有状态为 0
   const stats = {};
@@ -340,6 +351,9 @@ export function getJobStats() {
   for (const row of rows) {
     stats[row.status] = row.count;
   }
+
+  _statsCache = stats;
+  _statsCacheTime = now;
 
   return stats;
 }

@@ -9,6 +9,9 @@ import { chromium } from 'playwright';
 import { getLogger } from '../logger.js';
 import { config } from '../config.js';
 
+/** 等待获取页面的默认超时时间（毫秒） */
+const ACQUIRE_TIMEOUT_MS = 30000;
+
 /**
  * 创建浏览器池
  *
@@ -34,8 +37,8 @@ export function createBrowserPool(options = {}) {
    * @property {boolean} idle - 是否处于空闲状态
    */
 
-  /** @type {PageEntry[]} */
-  const pages = [];
+  /** @type {Set<PageEntry>} */
+  const pages = new Set();
 
   /** 当前正在使用中的页面数 */
   let activeCount = 0;
@@ -74,7 +77,7 @@ export function createBrowserPool(options = {}) {
 
     const page = await browser.newPage();
     const entry = { page, useCount: 0, idle: true };
-    pages.push(entry);
+    pages.add(entry);
     return entry;
   }
 
@@ -83,10 +86,7 @@ export function createBrowserPool(options = {}) {
    * @param {PageEntry} entry - 待销毁的页面条目
    */
   async function destroyPageEntry(entry) {
-    const idx = pages.indexOf(entry);
-    if (idx !== -1) {
-      pages.splice(idx, 1);
-    }
+    pages.delete(entry);
     try {
       await entry.page.close();
     } catch (err) {
@@ -109,9 +109,13 @@ export function createBrowserPool(options = {}) {
     }
 
     // 尝试从池中找到空闲且未超限的页面
-    const reusable = pages.find(
-      (e) => e.idle && e.useCount < pageReuseLimit
-    );
+    let reusable = null;
+    for (const e of pages) {
+      if (e.idle && e.useCount < pageReuseLimit) {
+        reusable = e;
+        break;
+      }
+    }
 
     if (reusable) {
       reusable.idle = false;
@@ -129,9 +133,20 @@ export function createBrowserPool(options = {}) {
       return wrapPageEntry(entry);
     }
 
-    // 并发数已满，进入等待队列
-    return new Promise((resolve) => {
-      waitQueue.push(resolve);
+    // 并发数已满，进入等待队列（带超时保护）
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        // 超时后从队列中移除
+        const idx = waitQueue.indexOf(waiter);
+        if (idx !== -1) waitQueue.splice(idx, 1);
+        reject(new Error(`获取页面超时（${ACQUIRE_TIMEOUT_MS}ms），浏览器池已满`));
+      }, ACQUIRE_TIMEOUT_MS);
+
+      const waiter = (result) => {
+        clearTimeout(timer);
+        resolve(result);
+      };
+      waitQueue.push(waiter);
     });
   }
 
@@ -215,7 +230,7 @@ export function createBrowserPool(options = {}) {
         // 忽略关闭错误
       }
     }
-    pages.length = 0;
+    pages.clear();
     activeCount = 0;
 
     // 关闭浏览器

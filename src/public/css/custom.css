@@ -47,6 +47,8 @@ html, body {
   color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   min-height: 100vh;
+  /* 消除移动端双击缩放导致的 300ms 点击延迟 */
+  touch-action: manipulation;
 }
 
 /* 覆盖 Pico.css 深色主题变量 */
@@ -202,13 +204,16 @@ html, body {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 6px 12px;
+  padding: 8px 16px;
   border: none;
   background: transparent;
   color: var(--text-muted);
   font-size: 12px;
   cursor: pointer;
   transition: color 0.2s;
+  /* 最小触控尺寸（iOS HIG 推荐 44px） */
+  min-height: 44px;
+  min-width: 44px;
 }
 
 .bottom-nav-btn.active {

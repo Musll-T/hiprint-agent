@@ -1,11 +1,11 @@
-import address from 'address';
+import { ip, ipv6, mac } from 'address';
 
 /**
  * 获取本机 IPv4 地址
  * @returns {string} IPv4 地址
  */
 export function getIp() {
-  return address.ip();
+  return ip();
 }
 
 /**
@@ -13,7 +13,7 @@ export function getIp() {
  * @returns {string} IPv6 地址
  */
 export function getIpv6() {
-  return address.ipv6();
+  return ipv6();
 }
 
 /**
@@ -22,7 +22,7 @@ export function getIpv6() {
  */
 export function getMac() {
   return new Promise((resolve, reject) => {
-    address.mac((err, addr) => {
+    mac((err, addr) => {
       if (err) {
         reject(err);
       } else {
@@ -37,13 +37,13 @@ export function getMac() {
  * @returns {Promise<{ip: string, ipv6: string, mac: string}>} 包含 ip、ipv6、mac 的对象
  */
 export async function getAllAddresses() {
-  const ip = getIp();
-  const ipv6 = getIpv6();
-  let mac;
+  const ipAddr = getIp();
+  const ipv6Addr = getIpv6();
+  let macAddr;
   try {
-    mac = await getMac();
+    macAddr = await getMac();
   } catch (err) {
-    mac = String(err);
+    macAddr = String(err);
   }
-  return { ip, ipv6, mac };
+  return { ip: ipAddr, ipv6: ipv6Addr, mac: macAddr };
 }

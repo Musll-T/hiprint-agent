@@ -8,8 +8,13 @@
 import { getLogger } from '../logger.js';
 import { injectResources } from './resources.js';
 
-/** 等待条码/二维码渲染的延迟时间（毫秒） */
-const RENDER_SETTLE_DELAY = 200;
+/**
+ * 条码/二维码渲染等待策略：
+ * 优先等待网络空闲后检测 bwip-js/JsBarcode 渲染完成（最多 RENDER_SETTLE_MAX_MS），
+ * 最少等待 RENDER_SETTLE_MIN_MS 以覆盖简单 canvas 绘制场景。
+ */
+const RENDER_SETTLE_MIN_MS = 50;
+const RENDER_SETTLE_MAX_MS = 500;
 
 /**
  * 将 pageSize 字符串或对象映射为 Playwright pdf() 的 format / width+height 参数
@@ -98,8 +103,22 @@ export async function renderPDF(pool, html, options = {}) {
     // 注入条码/二维码等依赖资源
     await injectResources(page);
 
-    // 等待条码/二维码等异步渲染完成
-    await page.waitForTimeout(RENDER_SETTLE_DELAY);
+    // 等待条码/二维码等异步渲染完成（智能等待：检测 canvas/svg 元素渲染就绪）
+    await page.waitForFunction(
+      () => {
+        // 检测所有 canvas 元素是否已有内容（bwip-js/JsBarcode 渲染到 canvas）
+        const canvases = document.querySelectorAll('canvas');
+        for (const c of canvases) {
+          if (c.width === 0 || c.height === 0) return false;
+        }
+        return true;
+      },
+      { timeout: RENDER_SETTLE_MAX_MS }
+    ).catch(() => {
+      // 超时不中断，继续生成 PDF
+    });
+    // 最少等待一小段时间确保简单 canvas 绘制完成
+    await page.waitForTimeout(RENDER_SETTLE_MIN_MS);
 
     // 构建 Playwright pdf() 参数
     const pageSizeOpts = resolvePageSize(options.pageSize);

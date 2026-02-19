@@ -78,9 +78,26 @@ export function createJobManager({ rendererPool, printerAdapter, config }) {
   /**
    * 内存中维护的活跃任务上下文映射
    * 用于取消检测和回调数据传递（不持久化到数据库的临时数据）
-   * @type {Map<string, { canceled: boolean, html?: string, options?: object, pdfPath?: string, replyId?: string }>}
+   * @type {Map<string, { canceled: boolean, html?: string, options?: object, pdfPath?: string, replyId?: string, createdAt: number }>}
    */
   const jobContexts = new Map();
+
+  /**
+   * 定期清理可能泄漏的孤儿上下文（任务卡住未完成的场景）
+   * 超过 2 倍渲染+打印超时仍未清理的上下文视为孤儿
+   */
+  const CONTEXT_MAX_AGE_MS = 2 * ((config.renderTimeout || 30000) + (config.printTimeout || 10000));
+  const CONTEXT_CLEANUP_INTERVAL_MS = 60000; // 每分钟检查一次
+  const contextCleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [jobId, ctx] of jobContexts) {
+      if (now - ctx.createdAt > CONTEXT_MAX_AGE_MS) {
+        log.warn({ jobId, ageMs: now - ctx.createdAt }, '清理过期任务上下文（疑似泄漏）');
+        if (ctx.pdfPath) _cleanupPdf(ctx.pdfPath);
+        jobContexts.delete(jobId);
+      }
+    }
+  }, CONTEXT_CLEANUP_INTERVAL_MS);
 
   // ============================================================
   // 公共方法
@@ -103,8 +120,8 @@ export function createJobManager({ rendererPool, printerAdapter, config }) {
    * @throws {Error} 队列已满时抛出错误
    */
   function submit(jobData) {
-    // 队列容量检查
-    const currentLoad = renderQueue.size + renderQueue.pending;
+    // 队列容量检查（同时检查渲染和打印队列总负载）
+    const currentLoad = renderQueue.size + renderQueue.pending + printQueue.size + printQueue.pending;
     const maxSize = config.maxQueueSize || 1000;
     if (currentLoad >= maxSize) {
       throw new Error(`队列已满（当前 ${currentLoad}/${maxSize}），请稍后重试`);
@@ -127,6 +144,7 @@ export function createJobManager({ rendererPool, printerAdapter, config }) {
       options: jobData.options || {},
       pdfPath: null,
       replyId: jobData.replyId || null,
+      createdAt: Date.now(),
     });
 
     log.info({ jobId: job.id, type: job.type, printer: job.printer }, '任务已提交');
@@ -481,6 +499,9 @@ export function createJobManager({ rendererPool, printerAdapter, config }) {
       }
     }
     jobContexts.clear();
+
+    // 停止上下文泄漏检测定时器
+    clearInterval(contextCleanupTimer);
 
     log.info('Job Manager 已关闭');
   }

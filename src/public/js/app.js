@@ -8,7 +8,7 @@
 
 /* global Vue, io */
 
-const { createApp, ref, computed, onMounted, onUnmounted, watch, nextTick } = Vue;
+const { createApp, ref, shallowRef, computed, onMounted, onUnmounted, watch, nextTick } = Vue;
 
 // ============================================================
 // API 工具函数
@@ -105,8 +105,8 @@ const app = createApp({
     const toasts = ref([]);
     let toastIdCounter = 0;
 
-    /** 日志条目（从任务事件中收集） */
-    const logEntries = ref([]);
+    /** 日志条目（从任务事件中收集，使用 shallowRef 避免深层响应式开销） */
+    const logEntries = shallowRef([]);
     const MAX_LOG_ENTRIES = 200;
 
     // ----------------------------------------------------------
@@ -439,16 +439,17 @@ const app = createApp({
      * @param {object} job - 任务对象
      */
     function addLogEntry(job) {
-      logEntries.value.unshift({
+      const entry = {
         id: job.id,
         status: job.status,
         printer: job.printer || null,
         time: job.updatedAt || job.createdAt || new Date().toISOString(),
-      });
-      // 限制日志条目数量
-      if (logEntries.value.length > MAX_LOG_ENTRIES) {
-        logEntries.value = logEntries.value.slice(0, MAX_LOG_ENTRIES);
-      }
+      };
+      // shallowRef 需要替换整个数组引用才能触发响应式更新
+      const updated = [entry, ...logEntries.value];
+      logEntries.value = updated.length > MAX_LOG_ENTRIES
+        ? updated.slice(0, MAX_LOG_ENTRIES)
+        : updated;
     }
 
     // ----------------------------------------------------------
@@ -471,24 +472,38 @@ const app = createApp({
         showToast('WebSocket 已断开', 'warning');
       });
 
-      // 任务状态变更
+      // 任务状态变更（使用 requestAnimationFrame 节流批量处理）
+      let jobUpdateQueue = [];
+      let jobUpdateScheduled = false;
+
       socket.on('job:update', (job) => {
         if (!job || !job.id) return;
+        jobUpdateQueue.push(job);
 
-        // 更新任务列表中已有的任务
-        const idx = jobs.value.findIndex((j) => j.id === job.id);
-        if (idx !== -1) {
-          jobs.value[idx] = Object.assign({}, jobs.value[idx], job);
-        }
+        if (!jobUpdateScheduled) {
+          jobUpdateScheduled = true;
+          requestAnimationFrame(() => {
+            // 批量处理所有排队的更新
+            for (const update of jobUpdateQueue) {
+              // 更新任务列表中已有的任务
+              const idx = jobs.value.findIndex((j) => j.id === update.id);
+              if (idx !== -1) {
+                jobs.value[idx] = Object.assign({}, jobs.value[idx], update);
+              }
 
-        // 记录日志
-        addLogEntry(job);
+              // 记录日志
+              addLogEntry(update);
 
-        // 特定状态显示 Toast
-        if (job.status === 'done') {
-          showToast('任务 ' + shortId(job.id) + ' 已完成', 'success');
-        } else if (job.status === 'failed') {
-          showToast('任务 ' + shortId(job.id) + ' 失败', 'error');
+              // 特定状态显示 Toast
+              if (update.status === 'done') {
+                showToast('任务 ' + shortId(update.id) + ' 已完成', 'success');
+              } else if (update.status === 'failed') {
+                showToast('任务 ' + shortId(update.id) + ' 失败', 'error');
+              }
+            }
+            jobUpdateQueue = [];
+            jobUpdateScheduled = false;
+          });
         }
       });
 

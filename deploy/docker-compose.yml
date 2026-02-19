@@ -3,12 +3,10 @@
 #
 # 使用方法：
 #   1. 将 config.json 放到本文件同级目录
-#   2. docker-compose up -d
+#   2. docker compose up -d
 #
 # 如需访问宿主机 CUPS 打印服务，取消 volumes 和 network_mode 注释
 # =============================================================================
-
-version: '3.8'
 
 services:
   hiprint-agent:
