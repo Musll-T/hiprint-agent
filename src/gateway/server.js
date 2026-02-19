@@ -85,6 +85,7 @@ export async function createGateway({ config, jobManager, printerAdapter }) {
     ip: addresses.ip,
     ipv6: addresses.ipv6,
     clientUrl: `http://${addresses.ip}:${port}`,
+    machineId: sysInfo.machineId,
   };
 
   // ------------------------------------------------------------------
