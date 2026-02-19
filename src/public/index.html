@@ -1,12 +1,13 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HiPrint Agent - 管理面板</title>
-  <!-- 预连接 CDN 域名，减少 DNS + TLS 延迟 -->
-  <link rel="preconnect" href="https://cdn.jsdelivr.net">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/css/custom.css">
 </head>
 <body>
@@ -14,8 +15,19 @@
     <!-- 侧边栏（Desktop） -->
     <aside class="sidebar" v-if="!isMobile">
       <div class="sidebar-header">
-        <h3>HiPrint Agent</h3>
-        <small class="text-muted">管理面板</small>
+        <div class="sidebar-logo">
+          <div class="sidebar-logo-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"></polyline>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+              <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+          </div>
+          <div class="sidebar-logo-text">
+            <h3>HiPrint Agent</h3>
+            <small>管理面板</small>
+          </div>
+        </div>
       </div>
       <nav class="sidebar-nav">
         <button
@@ -24,7 +36,7 @@
           :class="['sidebar-btn', { active: currentTab === tab.key }]"
           @click="currentTab = tab.key"
         >
-          <span class="tab-icon">{{ tab.icon }}</span>
+          <span class="tab-icon" v-html="tab.icon"></span>
           <span>{{ tab.label }}</span>
         </button>
       </nav>
@@ -48,41 +60,52 @@
         <div class="stats-grid">
           <!-- CPU 卡片 -->
           <article class="stat-card">
-            <header class="stat-card-header">
+            <div class="stat-card-header">
               <span class="stat-icon">CPU</span>
-            </header>
+            </div>
             <div class="stat-body">
-              <p class="stat-value">{{ systemStats.system?.cpuCount || 0 }} 核</p>
+              <p class="stat-value stat-value-animated">{{ systemStats.system?.cpuCount || 0 }} 核</p>
               <p class="stat-label">{{ systemStats.system?.cpuModel || '未知' }}</p>
             </div>
           </article>
 
-          <!-- 内存卡片 -->
+          <!-- 内存卡片（环形进度） -->
           <article class="stat-card">
-            <header class="stat-card-header">
+            <div class="stat-card-header">
               <span class="stat-icon">内存</span>
-            </header>
+            </div>
             <div class="stat-body">
-              <p class="stat-value">{{ formatBytes(systemStats.system?.freeMem) }} 可用</p>
+              <p class="stat-value stat-value-animated">{{ formatBytes(systemStats.system?.freeMem) }} 可用</p>
               <p class="stat-label">共 {{ formatBytes(systemStats.system?.totalMem) }}</p>
-              <div class="mem-bar">
-                <div
-                  class="mem-bar-fill"
-                  :style="{ width: memUsagePercent + '%' }"
-                  :class="memUsageClass"
-                ></div>
+              <div class="mem-ring-wrap">
+                <div class="mem-ring">
+                  <svg viewBox="0 0 36 36">
+                    <circle class="mem-ring-bg" cx="18" cy="18" r="16"></circle>
+                    <circle
+                      class="mem-ring-fill"
+                      :class="memUsageClass"
+                      cx="18" cy="18" r="16"
+                      :stroke-dasharray="100.53"
+                      :stroke-dashoffset="100.53 - (100.53 * memUsagePercent / 100)"
+                    ></circle>
+                  </svg>
+                  <span class="mem-ring-text">{{ memUsagePercent }}%</span>
+                </div>
+                <div class="mem-ring-detail">
+                  <small class="text-muted">已使用 {{ memUsagePercent }}%</small>
+                  <small class="text-muted">{{ formatBytes(systemStats.system?.totalMem - systemStats.system?.freeMem) }} / {{ formatBytes(systemStats.system?.totalMem) }}</small>
+                </div>
               </div>
-              <small class="text-muted">已使用 {{ memUsagePercent }}%</small>
             </div>
           </article>
 
           <!-- 活跃任务卡片 -->
           <article class="stat-card">
-            <header class="stat-card-header">
+            <div class="stat-card-header">
               <span class="stat-icon">任务</span>
-            </header>
+            </div>
             <div class="stat-body">
-              <p class="stat-value">{{ activeJobCount }}</p>
+              <p class="stat-value stat-value-animated">{{ activeJobCount }}</p>
               <p class="stat-label">活跃任务</p>
               <div class="stat-detail">
                 <span class="badge badge-rendering">渲染中 {{ systemStats.jobs?.rendering || 0 }}</span>
@@ -93,11 +116,11 @@
 
           <!-- 运行时间卡片 -->
           <article class="stat-card">
-            <header class="stat-card-header">
+            <div class="stat-card-header">
               <span class="stat-icon">运行</span>
-            </header>
+            </div>
             <div class="stat-body">
-              <p class="stat-value">{{ formatUptime(systemStats.system?.uptime) }}</p>
+              <p class="stat-value stat-value-animated">{{ formatUptime(systemStats.system?.uptime) }}</p>
               <p class="stat-label">运行时间</p>
               <div class="stat-detail">
                 <small class="text-muted">{{ systemStats.system?.hostname || '--' }}</small>
@@ -111,25 +134,25 @@
         <div class="stats-grid">
           <article class="stat-card mini">
             <div class="stat-body">
-              <p class="stat-value">{{ systemStats.jobs?.received || 0 }}</p>
+              <p class="stat-value stat-value-animated">{{ systemStats.jobs?.received || 0 }}</p>
               <p class="stat-label">已接收</p>
             </div>
           </article>
           <article class="stat-card mini">
             <div class="stat-body">
-              <p class="stat-value text-green">{{ systemStats.jobs?.done || 0 }}</p>
+              <p class="stat-value stat-value-animated text-green">{{ systemStats.jobs?.done || 0 }}</p>
               <p class="stat-label">已完成</p>
             </div>
           </article>
           <article class="stat-card mini">
             <div class="stat-body">
-              <p class="stat-value text-red">{{ systemStats.jobs?.failed || 0 }}</p>
+              <p class="stat-value stat-value-animated text-red">{{ systemStats.jobs?.failed || 0 }}</p>
               <p class="stat-label">失败</p>
             </div>
           </article>
           <article class="stat-card mini">
             <div class="stat-body">
-              <p class="stat-value">{{ systemStats.connections || 0 }}</p>
+              <p class="stat-value stat-value-animated">{{ systemStats.connections || 0 }}</p>
               <p class="stat-label">连接数</p>
             </div>
           </article>
@@ -148,8 +171,8 @@
           >
             <div class="printer-status-dot" :class="printerStatusClass(p.status)"></div>
             <div class="printer-info">
-              <h6 class="printer-name">{{ p.displayName || p.name }}</h6>
-              <small class="text-muted">{{ p.description || '无描述' }}</small>
+              <div class="printer-name">{{ p.displayName || p.name }}</div>
+              <div class="printer-desc">{{ p.description || '无描述' }}</div>
             </div>
             <div class="printer-badges">
               <span v-if="p.isDefault" class="badge badge-default">默认</span>
@@ -274,7 +297,7 @@
         :class="['bottom-nav-btn', { active: currentTab === tab.key }]"
         @click="currentTab = tab.key"
       >
-        <span class="tab-icon">{{ tab.icon }}</span>
+        <span class="tab-icon" v-html="tab.icon"></span>
         <small>{{ tab.label }}</small>
       </button>
     </nav>
