@@ -438,7 +438,12 @@
               <div class="maint-action-title">重启 CUPS 服务</div>
               <div class="maint-action-desc">通过 systemctl 或 service 命令重启 CUPS 打印服务</div>
             </div>
-            <button class="btn-sm btn-cancel" @click="confirmMaintenanceAction('restartCups', '重启 CUPS 服务')">重启 CUPS</button>
+            <button
+              class="btn-sm btn-cancel"
+              @click="confirmMaintenanceAction('restartCups', '重启 CUPS 服务')"
+              :disabled="cupsStatus && cupsStatus.canRestart === false"
+              :title="cupsStatus && cupsStatus.canRestart === false ? '宿主机模式下请在宿主机执行 systemctl restart cups' : ''"
+            >重启 CUPS</button>
           </div>
         </div>
 
@@ -478,7 +483,15 @@
             <div class="diag-item" :class="cupsStatus.active ? 'diag-ok' : 'diag-error'">
               <span class="diag-icon">{{ cupsStatus.active ? 'OK' : 'ERR' }}</span>
               <div class="diag-info">
-                <div class="diag-name">CUPS 服务</div>
+                <div class="diag-name">
+                  CUPS 服务
+                  <span
+                    v-if="cupsStatus.mode"
+                    class="badge badge-sm"
+                    :class="cupsStatus.mode === 'host_socket' ? 'badge-printing' : 'badge-done'"
+                    style="margin-left: 8px; font-weight: 400;"
+                  >{{ cupsModeName(cupsStatus.mode) }}</span>
+                </div>
                 <div class="diag-detail">{{ cupsStatus.detail }}</div>
               </div>
             </div>

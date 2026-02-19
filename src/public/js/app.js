@@ -42,7 +42,10 @@ async function postJSON(url, body) {
   const res = await fetch(url, options);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `请求失败: ${res.status}`);
+    const err = new Error(data.reason || data.error || `请求失败: ${res.status}`);
+    err.status = res.status;
+    err.data = data;
+    throw err;
   }
   return res.json();
 }
@@ -767,11 +770,19 @@ const app = createApp({
           const data = await postJSON('/api/maintenance/queues/clear');
           showToast('队列已清空 (CUPS: ' + data.cupsCleared + ', 内部: ' + data.internalCanceled + ')', 'success');
         } else if (action === 'restartCups') {
-          const data = await postJSON('/api/maintenance/cups/restart');
-          if (data.success) {
-            showToast('CUPS 服务已重启 (' + data.method + ')', 'success');
-          } else {
-            showToast('CUPS 服务重启失败', 'error');
+          try {
+            const data = await postJSON('/api/maintenance/cups/restart');
+            if (data.success) {
+              showToast('CUPS 服务已重启 (' + data.method + ')', 'success');
+            } else {
+              showToast('CUPS 服务重启失败', 'error');
+            }
+          } catch (restartErr) {
+            if (restartErr.status === 403) {
+              showToast(restartErr.data?.reason || 'CUPS 由宿主机管理，无法在容器内重启', 'warning');
+            } else {
+              throw restartErr;
+            }
           }
           loadCupsStatus();
         }
@@ -802,6 +813,17 @@ const app = createApp({
       if (status === 'ok') return 'OK';
       if (status === 'warning') return 'WARN';
       return 'ERR';
+    }
+
+    /**
+     * CUPS 运行模式中文名称
+     * @param {string} mode - CUPS 运行模式
+     * @returns {string}
+     */
+    function cupsModeName(mode) {
+      if (mode === 'local_process') return '容器模式';
+      if (mode === 'host_socket') return '宿主机模式';
+      return '未知';
     }
 
     /** 加载任务列表（重新加载） */
@@ -1186,6 +1208,7 @@ const app = createApp({
       executeMaintenanceAction,
       diagStatusClass,
       diagStatusIcon,
+      cupsModeName,
 
       // 任务预览
       showPreviewModal,

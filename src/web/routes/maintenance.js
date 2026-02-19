@@ -38,6 +38,15 @@ export function maintenanceRoutes(router, { maintenanceService }) {
       const result = await maintenanceService.restartCupsService();
       addAuditLog(null, 'api_restart_cups', `API 调用重启 CUPS: success=${result.success}, method=${result.method}`);
       if (!result.success) {
+        if (result.method === 'blocked_external') {
+          // 外部管理的 CUPS（如宿主机 socket 挂载），返回 403
+          return res.status(403).json({
+            success: false,
+            method: result.method,
+            reason: result.reason,
+          });
+        }
+        // 其他失败情况，返回 500
         return res.status(500).json({
           error: 'CUPS 服务重启失败（systemctl 和 service 命令均失败）',
           ...result,

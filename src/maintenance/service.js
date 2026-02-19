@@ -33,6 +33,26 @@ async function safeExecResult(cmd, args = []) {
 }
 
 /**
+ * 带超时的安全执行外部命令
+ * @param {string} cmd - 命令名称
+ * @param {string[]} args - 命令参数
+ * @param {number} timeoutMs - 超时时间（毫秒）
+ * @returns {Promise<{ success: boolean, stdout: string, stderr: string }>}
+ */
+async function safeExecWithTimeout(cmd, args = [], timeoutMs = 3000) {
+  try {
+    const { stdout, stderr } = await execFile(cmd, args, { timeout: timeoutMs });
+    return { success: true, stdout: stdout || '', stderr: stderr || '' };
+  } catch (err) {
+    return {
+      success: false,
+      stdout: err.stdout || '',
+      stderr: err.stderr || err.message || '',
+    };
+  }
+}
+
+/**
  * 创建维护服务实例
  *
  * @param {object} deps - 依赖注入
@@ -95,12 +115,27 @@ export function createMaintenanceService({ jobManager, printerAdapter, config })
   /**
    * 重启 CUPS 服务
    *
-   * 三级回退策略：systemctl -> service -> 直接启动 cupsd（容器环境）。
+   * 先检测 CUPS 运行模式，宿主机 socket 挂载时拒绝操作。
+   * 本地进程管理模式下采用两级回退：systemctl -> service。
    *
-   * @returns {Promise<{ success: boolean, method: string }>}
+   * @returns {Promise<{ success: boolean, method: string, reason?: string }>}
    */
   async function restartCupsService() {
     log.info('尝试重启 CUPS 服务');
+
+    // 检测当前 CUPS 运行模式
+    const cupsStatus = await getCupsStatus();
+
+    if (cupsStatus.mode === 'host_socket') {
+      // CUPS 由宿主机管理，容器内重启无效且危险
+      log.warn('CUPS 由宿主机管理，拒绝容器内重启');
+      addAuditLog(null, 'maintenance_restart_cups', 'CUPS 由宿主机管理，拒绝容器内重启');
+      return {
+        success: false,
+        method: 'blocked_external',
+        reason: 'CUPS 由宿主机管理，无法在容器内重启。请在宿主机执行: systemctl restart cups',
+      };
+    }
 
     // 方法 1: systemctl
     const systemctlResult = await safeExecResult('systemctl', ['restart', 'cups']);
@@ -120,19 +155,7 @@ export function createMaintenanceService({ jobManager, printerAdapter, config })
       return { success: true, method: 'service' };
     }
 
-    log.debug({ stderr: serviceResult.stderr }, 'service 命令失败，尝试直接启动 cupsd');
-
-    // 方法 3: 直接启动 cupsd（适用于无 systemd/init 的容器环境）
-    // 先终止已有 cupsd 进程（失败不影响后续启动）
-    await safeExecResult('killall', ['cupsd']);
-    const cupsdResult = await safeExecResult('cupsd');
-    if (cupsdResult.success) {
-      log.info('CUPS 服务已通过直接启动 cupsd 重启');
-      addAuditLog(null, 'maintenance_restart_cups', '通过 cupsd 直接启动成功（容器模式）');
-      return { success: true, method: 'cupsd' };
-    }
-
-    log.error({ stderr: cupsdResult.stderr }, 'CUPS 服务重启失败（所有方法均不可用）');
+    log.error({ stderr: serviceResult.stderr }, 'CUPS 服务重启失败（所有方法均不可用）');
     return { success: false, method: 'none' };
   }
 
@@ -345,37 +368,77 @@ export function createMaintenanceService({ jobManager, printerAdapter, config })
   /**
    * 获取 CUPS 服务状态
    *
-   * 优先使用 systemctl is-active cups，失败则尝试 service cups status。
+   * 检测策略：
+   * 1. lpstat -r（3 秒超时）-- 以 exit code 判断 CUPS 可达性（兼容宿主机 socket 挂载场景）
+   * 2. systemctl is-active cups -- 判断本地进程管理能力
+   * 3. 两者均失败时回退 service cups status
    *
-   * @returns {Promise<{ active: boolean, detail: string }>}
+   * 返回 mode 字段标识 CUPS 来源：
+   * - "local_process"：本地 systemd/init 管理的 CUPS 进程
+   * - "host_socket"：通过 socket 挂载的宿主机 CUPS（容器内无法重启）
+   * - "unknown"：无法确定来源
+   *
+   * @returns {Promise<{ active: boolean, mode: 'host_socket'|'local_process'|'unknown', canRestart: boolean, detail: string }>}
    */
   async function getCupsStatus() {
-    // 方法 1: systemctl is-active cups
+    // 1. lpstat -r 检测 CUPS 可达性（exit 0 = active，不依赖输出文案避免本地化问题）
+    const lpstatResult = await safeExecWithTimeout('lpstat', ['-r'], 3000);
+    const lpstatOk = lpstatResult.success;
+
+    // 2. systemctl is-active cups 检测本地进程管理能力
     const systemctlResult = await safeExecResult('systemctl', ['is-active', 'cups']);
-    if (systemctlResult.success) {
-      const status = systemctlResult.stdout.trim();
+    const systemctlOk = systemctlResult.success && systemctlResult.stdout.trim() === 'active';
+
+    // 判定逻辑
+    if (lpstatOk && systemctlOk) {
+      // CUPS 可达且本地进程管理正常
       return {
-        active: status === 'active',
-        detail: status,
+        active: true,
+        mode: 'local_process',
+        canRestart: true,
+        detail: `lpstat: 可达; systemctl: ${systemctlResult.stdout.trim()}`,
       };
     }
 
-    // 方法 2: service cups status
+    if (lpstatOk && !systemctlOk) {
+      // CUPS 可达但非本地进程管理 -- 典型的 Docker 宿主机 socket 挂载场景
+      return {
+        active: true,
+        mode: 'host_socket',
+        canRestart: false,
+        detail: 'CUPS 通过宿主机 socket 挂载，容器内无法管理进程',
+      };
+    }
+
+    if (!lpstatOk && systemctlOk) {
+      // 本地进程管理正常但 CUPS 不可达 -- 服务异常但可通过 systemctl 重启
+      return {
+        active: false,
+        mode: 'local_process',
+        canRestart: true,
+        detail: `lpstat: 不可达; systemctl: ${systemctlResult.stdout.trim()}（CUPS 服务异常）`,
+      };
+    }
+
+    // 两者均失败，回退 service cups status
     const serviceResult = await safeExecResult('service', ['cups', 'status']);
     if (serviceResult.success) {
       const output = serviceResult.stdout.trim();
-      // 检查输出中是否包含 running 关键词
       const isRunning = /running/i.test(output);
       return {
         active: isRunning,
-        detail: output.substring(0, 200), // 截断过长输出
+        mode: 'local_process',
+        canRestart: true,
+        detail: output.substring(0, 200),
       };
     }
 
-    // 两种方式均失败，CUPS 可能未安装
+    // 所有检测方式均失败
     return {
       active: false,
-      detail: 'CUPS 服务状态检测失败（systemctl 和 service 命令均不可用）',
+      mode: 'unknown',
+      canRestart: false,
+      detail: 'CUPS 服务状态检测失败（lpstat、systemctl、service 命令均不可用）',
     };
   }
 
