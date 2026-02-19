@@ -909,11 +909,29 @@ const app = createApp({
     function copyMachineId() {
       const id = systemStats.value.system?.machineId;
       if (!id) return;
-      navigator.clipboard.writeText(id).then(() => {
-        showToast('设备编号已复制', 'success');
-      }).catch(() => {
-        showToast('复制失败，请手动选取', 'error');
-      });
+      // Clipboard API 仅在安全上下文（HTTPS/localhost）中可用
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(id).then(() => {
+          showToast('设备编号已复制', 'success');
+        }).catch(() => {
+          showToast('复制失败，请手动选取', 'error');
+        });
+      } else {
+        // HTTP 环境回退方案
+        const ta = document.createElement('textarea');
+        ta.value = id;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+          document.execCommand('copy');
+          showToast('设备编号已复制', 'success');
+        } catch {
+          showToast('复制失败，请手动选取', 'error');
+        }
+        document.body.removeChild(ta);
+      }
     }
 
     // ----------------------------------------------------------
