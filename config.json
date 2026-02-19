@@ -21,6 +21,7 @@
     "origin": "*",
     "methods": ["GET", "POST"]
   },
+  "agentId": "",
   "connectTransit": false,
   "transitUrl": "",
   "transitToken": "",

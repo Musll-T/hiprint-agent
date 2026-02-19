@@ -20,6 +20,7 @@ import { registerEvents } from './events.js';
 import { FragmentManager } from '../utils/fragments.js';
 import { getSystemInfo } from '../utils/system.js';
 import { getAllAddresses } from '../utils/network.js';
+import { config as appConfig } from '../config.js';
 
 /**
  * 创建 Socket Gateway 实例
@@ -86,6 +87,7 @@ export async function createGateway({ config, jobManager, printerAdapter }) {
     ipv6: addresses.ipv6,
     clientUrl: `http://${addresses.ip}:${port}`,
     machineId: sysInfo.machineId,
+    agentId: appConfig.agentId || sysInfo.machineId || '',
   };
 
   // ------------------------------------------------------------------

@@ -66,6 +66,13 @@ function validateConfig(cfg) {
     }
   }
 
+  // agentId 校验（可选，用于中转模式下的稳定标识）
+  if (cfg.agentId !== undefined && cfg.agentId !== '') {
+    if (typeof cfg.agentId !== 'string') {
+      errors.push(`agentId 必须为字符串类型，当前值: ${cfg.agentId}`);
+    }
+  }
+
   // 中转客户端配置校验
   if (cfg.connectTransit !== undefined && typeof cfg.connectTransit !== 'boolean') {
     errors.push(`connectTransit 必须为 boolean 类型，当前值: ${cfg.connectTransit}`);

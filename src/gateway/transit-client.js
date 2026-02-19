@@ -14,6 +14,7 @@ import { io } from 'socket.io-client';
 import { getLogger } from '../logger.js';
 import { JobStatus, JobType } from '../jobs/types.js';
 import { FragmentManager } from '../utils/fragments.js';
+import { getMachineId } from '../utils/system.js';
 
 /** 中转客户端提交的 job 使用的 clientId 前缀 */
 const TRANSIT_CLIENT_PREFIX = 'transit:';
@@ -31,6 +32,9 @@ const TRANSIT_CLIENT_PREFIX = 'transit:';
 export function createTransitClient({ config, jobManager, printerAdapter, systemInfo }) {
   const log = getLogger();
 
+  // 稳定标识：优先使用配置的 agentId，回退到 machineId
+  const stableClientId = config.agentId || getMachineId() || undefined;
+
   // 中转客户端独立的分片管理器（与 Server 模式隔离）
   const fragmentManager = new FragmentManager({
     checkInterval: 5,
@@ -39,8 +43,11 @@ export function createTransitClient({ config, jobManager, printerAdapter, system
 
   const client = io(config.transitUrl, {
     transports: ['websocket'],
-    // 使用 "electron-hiprint" 标识，零中转服务修改
-    query: { client: 'electron-hiprint' },
+    // 使用 "electron-hiprint" 标识；携带稳定 clientId 供中转服务路由
+    query: {
+      client: 'electron-hiprint',
+      ...(stableClientId ? { clientId: stableClientId } : {}),
+    },
     auth: { token: config.transitToken },
     reconnection: true,
     reconnectionDelay: 2000,
@@ -129,18 +136,27 @@ export function createTransitClient({ config, jobManager, printerAdapter, system
   // ------------------------------------------------------------------
 
   client.on('connect', async () => {
-    log.info({ socketId: client.id, url: config.transitUrl }, '已连接中转服务');
+    log.info({ socketId: client.id, stableClientId, url: config.transitUrl }, '已连接中转服务');
 
-    // 推送打印机列表
+    // 推送打印机列表（注入 agent 来源标识）
     try {
       const printers = await printerAdapter.getPrinters();
-      client.emit('printerList', printers);
+      const enrichedPrinters = printers.map(p => ({
+        ...p,
+        agentId: stableClientId || client.id,
+        agentHost: systemInfo?.hostname || '',
+        agentIp: systemInfo?.ip || '',
+      }));
+      client.emit('printerList', enrichedPrinters);
     } catch (err) {
       log.error({ err }, '中转客户端: 获取打印机列表失败');
     }
 
-    // 推送客户端信息
-    client.emit('clientInfo', systemInfo);
+    // 推送客户端信息（携带稳定标识）
+    client.emit('clientInfo', {
+      ...systemInfo,
+      agentId: stableClientId || client.id,
+    });
 
     // 注册 jobManager 事件监听（先移除旧监听器，防止重连时重复注册）
     _removeJobListeners();
@@ -151,14 +167,23 @@ export function createTransitClient({ config, jobManager, printerAdapter, system
 
   client.on('getClientInfo', () => {
     log.debug({ socketId: client.id }, '中转服务请求: getClientInfo');
-    client.emit('clientInfo', systemInfo);
+    client.emit('clientInfo', {
+      ...systemInfo,
+      agentId: stableClientId || client.id,
+    });
   });
 
   client.on('refreshPrinterList', async () => {
     log.debug({ socketId: client.id }, '中转服务请求: refreshPrinterList');
     try {
       const printers = await printerAdapter.getPrinters();
-      client.emit('printerList', printers);
+      const enrichedPrinters = printers.map(p => ({
+        ...p,
+        agentId: stableClientId || client.id,
+        agentHost: systemInfo?.hostname || '',
+        agentIp: systemInfo?.ip || '',
+      }));
+      client.emit('printerList', enrichedPrinters);
     } catch (err) {
       log.error({ err }, '中转客户端: 刷新打印机列表失败');
     }

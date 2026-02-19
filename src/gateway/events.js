@@ -28,7 +28,7 @@ export function registerEvents(socket, { jobManager, printerAdapter, fragmentMan
   // ------------------------------------------------------------------
   // 连接后自动推送打印机列表和客户端信息
   // ------------------------------------------------------------------
-  _emitPrinterList(socket, printerAdapter);
+  _emitPrinterList(socket, printerAdapter, systemInfo);
   socket.emit('clientInfo', systemInfo);
 
   // ------------------------------------------------------------------
@@ -48,7 +48,7 @@ export function registerEvents(socket, { jobManager, printerAdapter, fragmentMan
    */
   socket.on('refreshPrinterList', () => {
     log.debug({ socketId: socket.id }, 'refreshPrinterList');
-    _emitPrinterList(socket, printerAdapter);
+    _emitPrinterList(socket, printerAdapter, systemInfo);
   });
 
   /**
@@ -330,15 +330,36 @@ export function registerEvents(socket, { jobManager, printerAdapter, fragmentMan
 // ------------------------------------------------------------------
 
 /**
+ * 为打印机列表注入 agent 来源标识
+ *
+ * 在多 agent 部署场景下，Web 端需要知道每个打印机来自哪个 agent，
+ * 以便在打印时正确路由到目标服务器。
+ *
+ * @param {Array} printers - 原始打印机列表
+ * @param {object} systemInfo - 系统信息（含 agentId、hostname、ip）
+ * @returns {Array} 增强后的打印机列表
+ */
+export function enrichPrinterList(printers, systemInfo) {
+  if (!systemInfo || !Array.isArray(printers)) return printers;
+  return printers.map(printer => ({
+    ...printer,
+    agentId: systemInfo.agentId || '',
+    agentHost: systemInfo.hostname || '',
+    agentIp: systemInfo.ip || '',
+  }));
+}
+
+/**
  * 异步获取打印机列表并推送给客户端
  *
  * @param {import('socket.io').Socket} socket - 目标 socket
  * @param {object} printerAdapter - 打印适配器实例
+ * @param {object} systemInfo - 预采集的系统信息（含 agentId、hostname、ip）
  */
-async function _emitPrinterList(socket, printerAdapter) {
+async function _emitPrinterList(socket, printerAdapter, systemInfo) {
   try {
     const printers = await printerAdapter.getPrinters();
-    socket.emit('printerList', printers);
+    socket.emit('printerList', enrichPrinterList(printers, systemInfo));
   } catch (err) {
     const log = getLogger();
     log.error({ socketId: socket.id, err }, '获取打印机列表失败');
