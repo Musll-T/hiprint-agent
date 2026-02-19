@@ -52,6 +52,13 @@ function validateConfig(cfg) {
     }
   }
 
+  // 预览目录校验
+  if (cfg.previewDir !== undefined) {
+    if (typeof cfg.previewDir !== 'string') {
+      errors.push(`previewDir 必须为字符串类型，当前值: ${cfg.previewDir}`);
+    }
+  }
+
   // 队列大小校验
   if (cfg.maxQueueSize !== undefined) {
     if (!Number.isInteger(cfg.maxQueueSize) || cfg.maxQueueSize < 1 || cfg.maxQueueSize > 10000) {
@@ -79,6 +86,20 @@ function validateConfig(cfg) {
     }
     if (!cfg.transitToken || typeof cfg.transitToken !== 'string') {
       errors.push('connectTransit 启用时 transitToken 必须为非空字符串');
+    }
+  }
+
+  // Admin 认证配置校验（可选，不存在时禁用认证）
+  if (cfg.admin !== undefined) {
+    if (typeof cfg.admin !== 'object' || cfg.admin === null || Array.isArray(cfg.admin)) {
+      errors.push('admin 必须为对象类型');
+    } else {
+      if (!cfg.admin.username || typeof cfg.admin.username !== 'string') {
+        errors.push('admin.username 必须为非空字符串');
+      }
+      if (!cfg.admin.password || typeof cfg.admin.password !== 'string') {
+        errors.push('admin.password 必须为非空字符串');
+      }
     }
   }
 

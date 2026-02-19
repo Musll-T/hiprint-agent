@@ -5,7 +5,10 @@
 # =============================================================================
 
 # ---- 阶段 1：构建依赖 ----
-FROM mcr.microsoft.com/playwright:v1.58.2-noble AS builder
+# Playwright 版本参数化：构建时通过 --build-arg PLAYWRIGHT_VERSION=x.x.x 指定
+# 默认值应与 package.json 中 playwright 依赖的实际安装版本保持一致
+ARG PLAYWRIGHT_VERSION=1.58.2
+FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble AS builder
 
 # 安装原生模块编译工具链（仅在构建阶段需要）
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -23,7 +26,8 @@ RUN npm ci --omit=dev && \
     npm cache clean --force
 
 # ---- 阶段 2：运行时镜像 ----
-FROM mcr.microsoft.com/playwright:v1.58.2-noble
+ARG PLAYWRIGHT_VERSION=1.58.2
+FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble
 
 # 安装 CUPS 客户端和 CJK 字体（中日韩文字渲染支持）
 RUN apt-get update && apt-get install -y --no-install-recommends \

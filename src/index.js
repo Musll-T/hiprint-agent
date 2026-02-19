@@ -3,6 +3,8 @@ import { initLogger, getLogger } from './logger.js';
 import { initDB, closeDB, cleanOldJobs } from './jobs/store.js';
 import { createBrowserPool } from './renderer/pool.js';
 import { createPrinterAdapter } from './printer/adapter.js';
+import { createPrinterAdmin } from './printer/admin.js';
+import { createMaintenanceService } from './maintenance/service.js';
 import { createJobManager } from './jobs/manager.js';
 import { createGateway } from './gateway/server.js';
 import { createAdminWeb } from './web/server.js';
@@ -49,6 +51,10 @@ async function main() {
   });
   log.info('打印适配器初始化完成');
 
+  // 5.5 初始化打印机管理服务
+  const printerAdmin = createPrinterAdmin();
+  log.info('打印机管理服务初始化完成');
+
   // 6. 初始化 Job Manager（任务调度器）
   jobManager = createJobManager({
     rendererPool: browserPool,
@@ -56,6 +62,14 @@ async function main() {
     config,
   });
   log.info('Job Manager 初始化完成');
+
+  // 6.5 初始化维护服务
+  const maintenanceService = createMaintenanceService({
+    jobManager,
+    printerAdapter,
+    config,
+  });
+  log.info('维护服务初始化完成');
 
   // 7. 启动 Socket Gateway (:17521)
   gateway = await createGateway({
@@ -84,6 +98,8 @@ async function main() {
     config,
     jobManager,
     printerAdapter,
+    printerAdmin,
+    maintenanceService,
     gatewayIo: gateway.io,
     transitClient,
   });
@@ -91,16 +107,17 @@ async function main() {
 
   // 9. 启动定时清理过期任务（每 6 小时执行一次）
   const retentionDays = config.jobRetentionDays || 30;
+  const previewDir = config.previewDir || './data/preview';
   const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
   // 启动时立即执行一次清理
   try {
-    cleanOldJobs(retentionDays);
+    cleanOldJobs(retentionDays, previewDir);
   } catch (err) {
     log.warn({ err }, '启动时清理过期任务失败');
   }
   jobCleanupTimer = setInterval(() => {
     try {
-      const result = cleanOldJobs(retentionDays);
+      const result = cleanOldJobs(retentionDays, previewDir);
       if (result.deletedJobs > 0) {
         log.info(result, '定时清理过期任务完成');
       }

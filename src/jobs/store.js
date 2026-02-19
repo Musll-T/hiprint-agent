@@ -6,8 +6,8 @@
  * 启用 WAL 模式以提升并发读写性能。
  */
 
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync, unlinkSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import Database from 'better-sqlite3';
 import dayjs from 'dayjs';
 import { v7 as uuidv7 } from 'uuid';
@@ -25,6 +25,10 @@ let stmtUpdateStatus = null;
 let stmtGetJob = null;
 let stmtInsertAudit = null;
 let stmtGetStats = null;
+let stmtListJobs = null;
+let stmtListJobsByStatus = null;
+let stmtCountAll = null;
+let stmtCountByStatus = null;
 
 // ============================================================
 // 内部工具函数
@@ -180,6 +184,14 @@ export function initDB(dbPath) {
     SELECT status, COUNT(*) as count FROM jobs GROUP BY status
   `);
 
+  // listJobs 预编译语句（默认排序 created_at DESC）
+  stmtListJobs = db.prepare('SELECT * FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?');
+  stmtListJobsByStatus = db.prepare('SELECT * FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?');
+
+  // countJobs 预编译语句
+  stmtCountAll = db.prepare('SELECT COUNT(*) as total FROM jobs');
+  stmtCountByStatus = db.prepare('SELECT COUNT(*) as total FROM jobs WHERE status = ?');
+
   log.info('数据库表和索引已就绪');
 
   return { db };
@@ -296,7 +308,15 @@ export function listJobs(options = {}) {
 
   const { status, limit = 50, offset = 0, orderBy = 'created_at DESC' } = options;
 
-  // 排序白名单，防止 SQL 注入
+  // 默认排序使用预编译语句（性能优化）
+  if (orderBy === 'created_at DESC') {
+    const rows = status
+      ? stmtListJobsByStatus.all(status, limit, offset)
+      : stmtListJobs.all(limit, offset);
+    return rows.map(rowToJob);
+  }
+
+  // 非默认排序，排序白名单防止 SQL 注入
   const ALLOWED_ORDER = [
     'created_at DESC',
     'created_at ASC',
@@ -320,6 +340,22 @@ export function listJobs(options = {}) {
 
   const rows = db.prepare(sql).all(...params);
   return rows.map(rowToJob);
+}
+
+/**
+ * 统计任务总数
+ *
+ * @param {object} [options] - 查询参数
+ * @param {string} [options.status] - 按状态过滤
+ * @returns {number} 任务总数
+ */
+export function countJobs(options = {}) {
+  ensureDB();
+  const { status } = options;
+  if (status) {
+    return stmtCountByStatus.get(status).total;
+  }
+  return stmtCountAll.get().total;
 }
 
 /**
@@ -366,12 +402,25 @@ export function getJobStats() {
  * @param {number} days - 保留天数，删除此天数之前的记录
  * @returns {{ deletedJobs: number, deletedLogs: number }} 删除的记录数
  */
-export function cleanOldJobs(days) {
+export function cleanOldJobs(days, previewDir) {
   ensureDB();
   const log = getLogger();
 
   const cutoff = dayjs().subtract(days, 'day').toISOString();
   const placeholders = TERMINAL_STATUSES.map(() => '?').join(', ');
+
+  // 在删除之前，先查询要删除的 job id，用于同步清理预览文件
+  if (previewDir) {
+    const selectSQL = `SELECT id FROM jobs WHERE created_at < ? AND status IN (${placeholders})`;
+    const jobIds = db.prepare(selectSQL).all(cutoff, ...TERMINAL_STATUSES);
+    for (const { id } of jobIds) {
+      try {
+        unlinkSync(join(previewDir, `${id}.html`));
+      } catch {
+        // 文件不存在则忽略
+      }
+    }
+  }
 
   // 先删除关联的审计日志
   const deleteLogsSQL = `
@@ -433,6 +482,10 @@ export function closeDB() {
     stmtGetJob = null;
     stmtInsertAudit = null;
     stmtGetStats = null;
+    stmtListJobs = null;
+    stmtListJobsByStatus = null;
+    stmtCountAll = null;
+    stmtCountByStatus = null;
 
     log.info('数据库连接已关闭');
   }

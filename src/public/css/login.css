@@ -1,0 +1,199 @@
+/* ============================================================
+ * HiPrint Agent 登录页 - 暗色主题
+ *
+ * 设计风格与管理面板一致：Minimalism Dark Mode
+ * ============================================================ */
+
+/* 复用管理面板的 CSS 变量 */
+:root {
+  --bg-base:     #09090b;
+  --bg-surface:  #18181b;
+  --bg-elevated: #27272a;
+  --bg-hover:    #3f3f46;
+  --text-primary:   #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-tertiary:  #71717a;
+  --accent:      #3b82f6;
+  --accent-soft: rgba(59, 130, 246, 0.12);
+  --color-failed:    #ef4444;
+  --border-color:  #27272a;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.2s ease;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================
+ * 登录页布局
+ * ============================================================ */
+
+.login-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.login-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 40px 32px;
+  width: 100%;
+  max-width: 400px;
+}
+
+/* ============================================================
+ * Logo / 标题区域
+ * ============================================================ */
+
+.login-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background-color: var(--accent-soft);
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+  color: var(--accent);
+}
+
+.login-logo svg {
+  width: 24px;
+  height: 24px;
+}
+
+.login-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.login-header p {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+/* ============================================================
+ * 表单控件
+ * ============================================================ */
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 10px 12px;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.form-group input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.form-group input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ============================================================
+ * 错误提示
+ * ============================================================ */
+
+.login-error {
+  display: none;
+  padding: 10px 12px;
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-sm);
+  color: var(--color-failed);
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+.login-error.visible {
+  display: block;
+}
+
+/* ============================================================
+ * 登录按钮
+ * ============================================================ */
+
+.login-btn {
+  width: 100%;
+  padding: 10px 16px;
+  background-color: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), opacity var(--transition-fast);
+}
+
+.login-btn:hover {
+  background-color: #2563eb;
+}
+
+.login-btn:active {
+  background-color: #1d4ed8;
+}
+
+.login-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+ * 页脚
+ * ============================================================ */
+
+.login-footer {
+  text-align: center;
+  margin-top: 24px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}

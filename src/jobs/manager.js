@@ -12,7 +12,8 @@
  */
 
 import { EventEmitter } from 'node:events';
-import { writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
+import { unlinkSync, mkdirSync } from 'node:fs';
+import { writeFile as writeFileAsync, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import PQueue from 'p-queue';
 import { v7 as uuidv7 } from 'uuid';
@@ -150,6 +151,16 @@ export function createJobManager({ rendererPool, printerAdapter, config }) {
     log.info({ jobId: job.id, type: job.type, printer: job.printer }, '任务已提交');
     events.emit('job:update', job);
 
+    // 异步保存 HTML 预览文件（不阻塞主流程）
+    const previewDir = config.previewDir || './data/preview';
+    if (jobData.html && RENDER_REQUIRED_TYPES.has(job.type)) {
+      mkdir(previewDir, { recursive: true })
+        .then(() => writeFileAsync(join(previewDir, `${job.id}.html`), jobData.html, 'utf-8'))
+        .catch((err) => {
+          log.warn({ jobId: job.id, err: err.message }, '保存预览文件失败');
+        });
+    }
+
     // 根据任务类型决定进入渲染队列还是直接打印队列
     if (DIRECT_PRINT_TYPES.has(job.type)) {
       // PDF/URL_PDF/BLOB_PDF 类型跳过渲染，直接进入打印
@@ -232,7 +243,7 @@ export function createJobManager({ rendererPool, printerAdapter, config }) {
       // 需要打印的类型：将 PDF buffer 写入临时文件，加入打印队列
       const pdfFileName = `${job.id}.pdf`;
       const pdfPath = join(pdfDir, pdfFileName);
-      writeFileSync(pdfPath, result.buffer);
+      await writeFileAsync(pdfPath, result.buffer);
 
       if (ctx) {
         ctx.pdfPath = pdfPath;
@@ -295,10 +306,12 @@ export function createJobManager({ rendererPool, printerAdapter, config }) {
         throw new Error('PDF 文件路径缺失，无法执行打印');
       }
 
+      const timeout = _timeoutPromise(printTimeout, '打印提交超时');
       const printResult = await Promise.race([
         printerAdapter.print(pdfPath, job.printer, ctx?.options || {}),
-        _timeoutPromise(printTimeout, '打印提交超时'),
+        timeout.promise,
       ]);
+      timeout.clear();
 
       const printDuration = Date.now() - startTime;
 
@@ -528,15 +541,17 @@ export function createJobManager({ rendererPool, printerAdapter, config }) {
   }
 
   /**
-   * 创建一个在指定时间后 reject 的超时 Promise
+   * 创建一个在指定时间后 reject 的超时 Promise（可清除）
    * @param {number} ms - 超时毫秒数
    * @param {string} message - 超时错误信息
-   * @returns {Promise<never>}
+   * @returns {{ promise: Promise<never>, clear: () => void }}
    */
   function _timeoutPromise(ms, message) {
-    return new Promise((_, reject) => {
-      setTimeout(() => reject(new Error(message)), ms);
+    let timer;
+    const promise = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
     });
+    return { promise, clear: () => clearTimeout(timer) };
   }
 
   /**

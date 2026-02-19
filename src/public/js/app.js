@@ -30,13 +30,52 @@ async function fetchJSON(url) {
 /**
  * 发起 POST 请求并返回 JSON
  * @param {string} url - 请求地址
+ * @param {object} [body] - 请求体（可选）
  * @returns {Promise<any>}
  */
-async function postJSON(url) {
-  const res = await fetch(url, { method: 'POST' });
+async function postJSON(url, body) {
+  const options = { method: 'POST' };
+  if (body !== undefined) {
+    options.headers = { 'Content-Type': 'application/json' };
+    options.body = JSON.stringify(body);
+  }
+  const res = await fetch(url, options);
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `请求失败: ${res.status}`);
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `请求失败: ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * 发起 PUT 请求并返回 JSON
+ * @param {string} url - 请求地址
+ * @param {object} body - 请求体
+ * @returns {Promise<any>}
+ */
+async function putJSON(url, body) {
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `请求失败: ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * 发起 DELETE 请求并返回 JSON
+ * @param {string} url - 请求地址
+ * @returns {Promise<any>}
+ */
+async function deleteJSON(url) {
+  const res = await fetch(url, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `请求失败: ${res.status}`);
   }
   return res.json();
 }
@@ -55,6 +94,7 @@ const app = createApp({
       { key: 'dashboard', label: '仪表盘', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>' },
       { key: 'printers',  label: '打印机', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>' },
       { key: 'jobs',      label: '任务',   icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="13" y2="16"></line></svg>' },
+      { key: 'maintenance', label: '维护', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>' },
       { key: 'logs',      label: '日志',   icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>' },
     ];
 
@@ -109,6 +149,83 @@ const app = createApp({
     /** 日志条目（从任务事件中收集，使用 shallowRef 避免深层响应式开销） */
     const logEntries = shallowRef([]);
     const MAX_LOG_ENTRIES = 200;
+
+    // ----------------------------------------------------------
+    // 打印机管理 - 模态框状态
+    // ----------------------------------------------------------
+
+    /** 是否显示打印机添加/编辑模态框 */
+    const showPrinterModal = ref(false);
+
+    /** 模态框模式：'add' 或 'edit' */
+    const printerModalMode = ref('add');
+
+    /** 打印机表单数据 */
+    const printerForm = ref({
+      name: '',
+      deviceUri: '',
+      model: '',
+      description: '',
+      location: '',
+    });
+
+    /** 打印机表单校验错误 */
+    const printerFormErrors = ref({});
+
+    /** 通用确认对话框状态（供多处复用：删除打印机、维护操作等） */
+    const confirmDialog = ref({
+      visible: false,
+      title: '确认',
+      message: '',
+      onConfirm: () => {},
+    });
+
+    /** 操作进行中标记（防止重复提交） */
+    const printerSubmitting = ref(false);
+
+    // ----------------------------------------------------------
+    // 维护面板 - 状态
+    // ----------------------------------------------------------
+
+    /** 诊断结果 */
+    const diagnosticResult = ref(null);
+
+    /** 诊断进行中 */
+    const diagnosing = ref(false);
+
+    /** CUPS 状态 */
+    const cupsStatus = ref(null);
+
+    /** 打印机连通性检测结果 */
+    const connectivityResult = ref(null);
+
+    /** 连通性检测进行中 */
+    const checkingConnectivity = ref(false);
+
+    /** CUPS 日志内容 */
+    const cupsLogs = ref('');
+
+    /** 日志加载进行中 */
+    const loadingCupsLogs = ref(false);
+
+    /** 维护操作执行中 */
+    const maintenanceExecuting = ref(false);
+
+    // ----------------------------------------------------------
+    // 任务预览 - 状态
+    // ----------------------------------------------------------
+
+    /** 是否显示预览模态框 */
+    const showPreviewModal = ref(false);
+
+    /** 预览 iframe src URL */
+    const previewUrl = ref('');
+
+    /** 预览加载中 */
+    const previewLoading = ref(false);
+
+    /** 预览错误信息 */
+    const previewError = ref('');
 
     // ----------------------------------------------------------
     // 任务过滤选项
@@ -340,6 +457,301 @@ const app = createApp({
       }
     }
 
+    // ----------------------------------------------------------
+    // 打印机管理操作
+    // ----------------------------------------------------------
+
+    /** 打开添加打印机模态框 */
+    function openAddPrinter() {
+      printerModalMode.value = 'add';
+      printerForm.value = { name: '', deviceUri: '', model: '', description: '', location: '' };
+      printerFormErrors.value = {};
+      showPrinterModal.value = true;
+    }
+
+    /**
+     * 打开编辑打印机模态框
+     * @param {object} printer - 打印机对象
+     */
+    function openEditPrinter(printer) {
+      printerModalMode.value = 'edit';
+      printerForm.value = {
+        name: printer.name || '',
+        deviceUri: '',
+        model: '',
+        description: printer.description || '',
+        location: '',
+      };
+      printerFormErrors.value = {};
+      showPrinterModal.value = true;
+    }
+
+    /** 关闭打印机模态框 */
+    function closePrinterModal() {
+      showPrinterModal.value = false;
+      printerFormErrors.value = {};
+    }
+
+    /**
+     * 校验打印机表单
+     * @returns {boolean} 是否通过校验
+     */
+    function validatePrinterForm() {
+      const errors = {};
+      const form = printerForm.value;
+      const mode = printerModalMode.value;
+
+      if (mode === 'add') {
+        if (!form.name || !form.name.trim()) {
+          errors.name = '打印机名称不能为空';
+        } else if (!/^[a-zA-Z0-9_-]{1,127}$/.test(form.name.trim())) {
+          errors.name = '只能包含字母、数字、下划线和短横线';
+        }
+        if (!form.deviceUri || !form.deviceUri.trim()) {
+          errors.deviceUri = '设备 URI 不能为空';
+        }
+      }
+
+      if (mode === 'edit') {
+        // 编辑模式至少需要填写一项修改内容
+        if (!form.description && !form.location && !form.deviceUri) {
+          errors.general = '至少填写一项要修改的内容';
+        }
+      }
+
+      printerFormErrors.value = errors;
+      return Object.keys(errors).length === 0;
+    }
+
+    /** 提交打印机表单（添加或编辑） */
+    async function submitPrinterForm() {
+      if (!validatePrinterForm()) return;
+      if (printerSubmitting.value) return;
+
+      printerSubmitting.value = true;
+      try {
+        const form = printerForm.value;
+        if (printerModalMode.value === 'add') {
+          await postJSON('/api/printers', {
+            name: form.name.trim(),
+            deviceUri: form.deviceUri.trim(),
+            model: form.model.trim() || undefined,
+            description: form.description.trim() || undefined,
+            location: form.location.trim() || undefined,
+          });
+          showToast('打印机添加成功', 'success');
+        } else {
+          const body = {};
+          if (form.description) body.description = form.description.trim();
+          if (form.location) body.location = form.location.trim();
+          if (form.deviceUri) body.deviceUri = form.deviceUri.trim();
+          await putJSON('/api/printers/' + encodeURIComponent(form.name), body);
+          showToast('打印机配置已更新', 'success');
+        }
+        closePrinterModal();
+        loadPrinters();
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        printerSubmitting.value = false;
+      }
+    }
+
+    /**
+     * 关闭通用确认对话框
+     */
+    function dismissConfirmDialog() {
+      confirmDialog.value.visible = false;
+    }
+
+    /**
+     * 确认删除打印机（使用通用确认对话框）
+     * @param {string} name - 打印机名称
+     */
+    function confirmDeletePrinter(name) {
+      confirmDialog.value = {
+        visible: true,
+        title: '确认删除',
+        message: '确定要删除打印机 ' + name + ' 吗？此操作不可撤销。',
+        onConfirm: async () => {
+          confirmDialog.value.visible = false;
+          try {
+            await deleteJSON('/api/printers/' + encodeURIComponent(name));
+            showToast('打印机 ' + name + ' 已删除', 'success');
+            loadPrinters();
+          } catch (err) {
+            showToast('删除失败: ' + err.message, 'error');
+          }
+        },
+      };
+    }
+
+    /**
+     * 设为默认打印机
+     * @param {string} name - 打印机名称
+     */
+    async function setDefaultPrinter(name) {
+      try {
+        await postJSON('/api/printers/' + encodeURIComponent(name) + '/default');
+        showToast(name + ' 已设为默认打印机', 'success');
+        loadPrinters();
+      } catch (err) {
+        showToast('设置失败: ' + err.message, 'error');
+      }
+    }
+
+    /**
+     * 启用打印机
+     * @param {string} name - 打印机名称
+     */
+    async function enablePrinter(name) {
+      try {
+        await postJSON('/api/printers/' + encodeURIComponent(name) + '/enable');
+        showToast(name + ' 已启用', 'success');
+        loadPrinters();
+      } catch (err) {
+        showToast('启用失败: ' + err.message, 'error');
+      }
+    }
+
+    /**
+     * 停用打印机
+     * @param {string} name - 打印机名称
+     */
+    async function disablePrinter(name) {
+      try {
+        await postJSON('/api/printers/' + encodeURIComponent(name) + '/disable');
+        showToast(name + ' 已停用', 'success');
+        loadPrinters();
+      } catch (err) {
+        showToast('停用失败: ' + err.message, 'error');
+      }
+    }
+
+    // ----------------------------------------------------------
+    // 维护功能操作
+    // ----------------------------------------------------------
+
+    /** 执行一键诊断 */
+    async function runDiagnostics() {
+      if (diagnosing.value) return;
+      diagnosing.value = true;
+      diagnosticResult.value = null;
+      try {
+        const data = await postJSON('/api/maintenance/diagnostics');
+        diagnosticResult.value = data;
+        showToast('诊断完成', 'success');
+      } catch (err) {
+        showToast('诊断失败: ' + err.message, 'error');
+      } finally {
+        diagnosing.value = false;
+      }
+    }
+
+    /** 获取 CUPS 服务状态 */
+    async function loadCupsStatus() {
+      try {
+        cupsStatus.value = await fetchJSON('/api/maintenance/cups/status');
+      } catch (err) {
+        console.error('获取 CUPS 状态失败:', err);
+      }
+    }
+
+    /** 检测打印机连通性 */
+    async function checkConnectivity() {
+      if (checkingConnectivity.value) return;
+      checkingConnectivity.value = true;
+      connectivityResult.value = null;
+      try {
+        const data = await fetchJSON('/api/maintenance/printers/connectivity');
+        connectivityResult.value = data.printers || [];
+        showToast('连通性检测完成', 'success');
+      } catch (err) {
+        showToast('连通性检测失败: ' + err.message, 'error');
+      } finally {
+        checkingConnectivity.value = false;
+      }
+    }
+
+    /** 加载 CUPS 错误日志 */
+    async function loadCupsLogs() {
+      if (loadingCupsLogs.value) return;
+      loadingCupsLogs.value = true;
+      try {
+        const data = await fetchJSON('/api/maintenance/cups/logs?lines=100');
+        cupsLogs.value = data.content || '(无日志内容)';
+      } catch (err) {
+        cupsLogs.value = '加载失败: ' + err.message;
+      } finally {
+        loadingCupsLogs.value = false;
+      }
+    }
+
+    /**
+     * 请求确认维护操作（使用通用确认对话框）
+     * @param {string} type - 操作类型
+     * @param {string} label - 操作标签
+     */
+    function confirmMaintenanceAction(type, label) {
+      confirmDialog.value = {
+        visible: true,
+        title: '确认操作',
+        message: '确定要执行 ' + label + ' 操作吗？',
+        onConfirm: () => {
+          confirmDialog.value.visible = false;
+          executeMaintenanceAction(type);
+        },
+      };
+    }
+
+    /**
+     * 执行维护操作
+     * @param {string} action - 操作类型
+     */
+    async function executeMaintenanceAction(action) {
+      maintenanceExecuting.value = true;
+      try {
+        if (action === 'clearQueues') {
+          const data = await postJSON('/api/maintenance/queues/clear');
+          showToast('队列已清空 (CUPS: ' + data.cupsCleared + ', 内部: ' + data.internalCanceled + ')', 'success');
+        } else if (action === 'restartCups') {
+          const data = await postJSON('/api/maintenance/cups/restart');
+          if (data.success) {
+            showToast('CUPS 服务已重启 (' + data.method + ')', 'success');
+          } else {
+            showToast('CUPS 服务重启失败', 'error');
+          }
+          loadCupsStatus();
+        }
+      } catch (err) {
+        showToast('操作失败: ' + err.message, 'error');
+      } finally {
+        maintenanceExecuting.value = false;
+      }
+    }
+
+    /**
+     * 诊断项状态对应的 CSS class
+     * @param {string} status - ok / warning / error
+     * @returns {string}
+     */
+    function diagStatusClass(status) {
+      if (status === 'ok') return 'diag-ok';
+      if (status === 'warning') return 'diag-warning';
+      return 'diag-error';
+    }
+
+    /**
+     * 诊断项状态对应的图标文字
+     * @param {string} status
+     * @returns {string}
+     */
+    function diagStatusIcon(status) {
+      if (status === 'ok') return 'OK';
+      if (status === 'warning') return 'WARN';
+      return 'ERR';
+    }
+
     /** 加载任务列表（重新加载） */
     async function loadJobs() {
       try {
@@ -432,6 +844,40 @@ const app = createApp({
     }
 
     // ----------------------------------------------------------
+    // 任务预览操作
+    // ----------------------------------------------------------
+
+    /**
+     * 打开任务预览模态框
+     * @param {string} jobId - 任务 ID
+     */
+    function openPreview(jobId) {
+      previewUrl.value = '/api/jobs/' + jobId + '/preview';
+      previewError.value = '';
+      previewLoading.value = true;
+      showPreviewModal.value = true;
+    }
+
+    /** 预览 iframe 加载完成回调 */
+    function onPreviewLoad() {
+      previewLoading.value = false;
+    }
+
+    /** 预览 iframe 加载失败回调 */
+    function onPreviewError() {
+      previewLoading.value = false;
+      previewError.value = '预览内容不可用（已过期或不支持的任务类型）';
+    }
+
+    /** 关闭预览模态框 */
+    function closePreview() {
+      showPreviewModal.value = false;
+      previewUrl.value = '';
+      previewError.value = '';
+      previewLoading.value = false;
+    }
+
+    // ----------------------------------------------------------
     // 日志记录
     // ----------------------------------------------------------
 
@@ -478,6 +924,11 @@ const app = createApp({
       socket = io({
         path: '/admin-ws',
         transports: ['websocket', 'polling'],
+        auth: {
+          // 认证令牌：已登录的 session cookie 会自动随请求发送，
+          // 此标记用于告知 WebSocket 中间件本连接已通过页面认证
+          adminToken: 'session',
+        },
       });
 
       socket.on('connect', () => {
@@ -572,10 +1023,11 @@ const app = createApp({
       }
     });
 
-    // 切换到 printers / jobs Tab 时自动刷新数据
+    // 切换到 printers / jobs / maintenance Tab 时自动刷新数据
     watch(currentTab, (tab) => {
       if (tab === 'printers') loadPrinters();
       if (tab === 'jobs') loadJobs();
+      if (tab === 'maintenance') loadCupsStatus();
     });
 
     // ----------------------------------------------------------
@@ -614,6 +1066,25 @@ const app = createApp({
       printerStatusText,
       printerBadgeClass,
 
+      // 打印机管理
+      showPrinterModal,
+      printerModalMode,
+      printerForm,
+      printerFormErrors,
+      printerSubmitting,
+      openAddPrinter,
+      openEditPrinter,
+      closePrinterModal,
+      submitPrinterForm,
+      confirmDeletePrinter,
+      setDefaultPrinter,
+      enablePrinter,
+      disablePrinter,
+
+      // 通用确认对话框
+      confirmDialog,
+      dismissConfirmDialog,
+
       // 任务
       jobStatusText,
       jobBadgeClass,
@@ -626,6 +1097,34 @@ const app = createApp({
       cancelJob,
       retryJob,
       copyMachineId,
+
+      // 维护
+      diagnosticResult,
+      diagnosing,
+      cupsStatus,
+      connectivityResult,
+      checkingConnectivity,
+      cupsLogs,
+      loadingCupsLogs,
+      maintenanceExecuting,
+      runDiagnostics,
+      loadCupsStatus,
+      checkConnectivity,
+      loadCupsLogs,
+      confirmMaintenanceAction,
+      executeMaintenanceAction,
+      diagStatusClass,
+      diagStatusIcon,
+
+      // 任务预览
+      showPreviewModal,
+      previewUrl,
+      previewLoading,
+      previewError,
+      openPreview,
+      onPreviewLoad,
+      onPreviewError,
+      closePreview,
     };
   },
 });

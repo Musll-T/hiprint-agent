@@ -1,14 +1,18 @@
 /**
  * 任务路由
  *
- * 提供任务的查询、详情、取消和重试接口：
- *   GET    /api/jobs          - 分页查询任务列表
- *   GET    /api/jobs/:id      - 获取单个任务详情
- *   POST   /api/jobs/:id/cancel - 取消任务
- *   POST   /api/jobs/:id/retry  - 重试任务
+ * 提供任务的查询、详情、预览、取消和重试接口：
+ *   GET    /api/jobs              - 分页查询任务列表
+ *   GET    /api/jobs/:id          - 获取单个任务详情
+ *   GET    /api/jobs/:id/preview  - 获取任务 HTML 预览内容
+ *   POST   /api/jobs/:id/cancel   - 取消任务
+ *   POST   /api/jobs/:id/retry    - 重试任务
  */
 
-import { listJobs, getJob } from '../../jobs/store.js';
+import { readFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { listJobs, getJob, countJobs } from '../../jobs/store.js';
+import { config } from '../../config.js';
 
 /**
  * 注册任务路由
@@ -23,12 +27,14 @@ export function jobRoutes(router, { jobManager }) {
   router.get('/api/jobs', (req, res, next) => {
     try {
       const { status, limit = 50, offset = 0 } = req.query;
-      const jobs = listJobs({
+      const queryOpts = {
         status: status || undefined,
         limit: Number(limit),
         offset: Number(offset),
-      });
-      res.json({ jobs, total: jobs.length });
+      };
+      const jobs = listJobs(queryOpts);
+      const total = countJobs({ status: status || undefined });
+      res.json({ jobs, total });
     } catch (err) {
       next(err);
     }
@@ -43,6 +49,32 @@ export function jobRoutes(router, { jobManager }) {
       }
       res.json({ job });
     } catch (err) {
+      next(err);
+    }
+  });
+
+  // 获取任务预览内容（HTML）
+  router.get('/api/jobs/:id/preview', async (req, res, next) => {
+    try {
+      const job = getJob(req.params.id);
+      if (!job) {
+        return res.status(404).json({ error: '任务不存在' });
+      }
+
+      // 路径遍历防护：确保最终路径仍在预览目录内
+      const previewDir = resolve(config.previewDir || './data/preview');
+      const filePath = resolve(previewDir, `${req.params.id}.html`);
+
+      if (!filePath.startsWith(previewDir)) {
+        return res.status(400).json({ error: '非法的任务 ID' });
+      }
+
+      const html = await readFile(filePath, 'utf-8');
+      res.type('text/html').send(html);
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        return res.status(404).json({ error: '预览内容不可用（已过期或不支持的任务类型）' });
+      }
       next(err);
     }
   });

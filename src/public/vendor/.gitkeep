@@ -1,0 +1,7 @@
+# 本地脚本存放目录
+#
+# 将以下 CDN 脚本下载到此目录，以消除供应链风险并支持离线部署：
+#
+# curl -o bwip-js.min.js https://cdn.jsdelivr.net/npm/bwip-js@4/dist/bwip-js-min.js
+# curl -o JsBarcode.all.min.js https://cdn.jsdelivr.net/npm/jsbarcode@3/dist/JsBarcode.all.min.js
+# curl -o nzh.min.js https://cdn.jsdelivr.net/npm/nzh@1/dist/nzh.min.js

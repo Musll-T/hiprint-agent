@@ -202,3 +202,155 @@ export async function cancelJob(jobId) {
     return { success: false };
   }
 }
+
+// ============================================================
+// 打印机管理命令（管理操作需要让错误冒泡，不使用 safeExec）
+// ============================================================
+
+/**
+ * 添加打印机
+ * @param {{ name: string, deviceUri: string, model?: string, description?: string, location?: string, enabled?: boolean }} params
+ * @returns {Promise<{ success: boolean }>}
+ * @throws {Error} 添加失败时抛出
+ */
+export async function addPrinter({ name, deviceUri, model, description, location, enabled = true }) {
+  const log = getLogger();
+
+  // 构建参数: lpadmin -p <name> -v <uri> -m <model|everywhere>
+  const args = ['-p', name, '-v', deviceUri, '-m', model || 'everywhere'];
+
+  if (description) {
+    args.push('-D', description);
+  }
+  if (location) {
+    args.push('-L', location);
+  }
+  if (enabled) {
+    args.push('-E');
+  }
+
+  try {
+    await execFile('lpadmin', args);
+    log.info({ name, deviceUri, model: model || 'everywhere' }, '打印机已添加');
+    return { success: true };
+  } catch (err) {
+    throw new Error(`添加打印机失败 (${name}): ${err.message}`);
+  }
+}
+
+/**
+ * 删除打印机
+ * @param {string} name - 打印机名称
+ * @returns {Promise<{ success: boolean }>}
+ * @throws {Error} 删除失败时抛出
+ */
+export async function removePrinter(name) {
+  const log = getLogger();
+
+  try {
+    await execFile('lpadmin', ['-x', name]);
+    log.info({ name }, '打印机已删除');
+    return { success: true };
+  } catch (err) {
+    throw new Error(`删除打印机失败 (${name}): ${err.message}`);
+  }
+}
+
+/**
+ * 修改打印机配置
+ * @param {string} name - 打印机名称
+ * @param {object} options - 要修改的选项
+ * @param {string} [options.description] - 打印机描述
+ * @param {string} [options.location] - 打印机位置
+ * @param {string} [options.deviceUri] - 设备 URI
+ * @returns {Promise<{ success: boolean }>}
+ * @throws {Error} 修改失败时抛出
+ */
+export async function modifyPrinter(name, options = {}) {
+  const log = getLogger();
+
+  const args = ['-p', name];
+
+  if (options.description) {
+    args.push('-D', options.description);
+  }
+  if (options.location) {
+    args.push('-L', options.location);
+  }
+  if (options.deviceUri) {
+    args.push('-v', options.deviceUri);
+  }
+
+  // 至少需要一个修改项（除了 -p name 之外）
+  if (args.length <= 2) {
+    throw new Error('至少需要指定一个要修改的选项（description/location/deviceUri）');
+  }
+
+  try {
+    await execFile('lpadmin', args);
+    log.info({ name, options }, '打印机配置已修改');
+    return { success: true };
+  } catch (err) {
+    throw new Error(`修改打印机配置失败 (${name}): ${err.message}`);
+  }
+}
+
+/**
+ * 设置默认打印机
+ * @param {string} name - 打印机名称
+ * @returns {Promise<{ success: boolean }>}
+ * @throws {Error} 设置失败时抛出
+ */
+export async function setDefaultPrinter(name) {
+  const log = getLogger();
+
+  try {
+    await execFile('lpadmin', ['-d', name]);
+    log.info({ name }, '已设为默认打印机');
+    return { success: true };
+  } catch (err) {
+    throw new Error(`设置默认打印机失败 (${name}): ${err.message}`);
+  }
+}
+
+/**
+ * 启用打印机（接受任务 + 启用打印）
+ * @param {string} name - 打印机名称
+ * @returns {Promise<{ success: boolean }>}
+ * @throws {Error} 启用失败时抛出
+ */
+export async function enablePrinter(name) {
+  const log = getLogger();
+
+  try {
+    // 启用打印（cupsenable）
+    await execFile('cupsenable', [name]);
+    // 接受任务（cupsaccept）
+    await execFile('cupsaccept', [name]);
+    log.info({ name }, '打印机已启用');
+    return { success: true };
+  } catch (err) {
+    throw new Error(`启用打印机失败 (${name}): ${err.message}`);
+  }
+}
+
+/**
+ * 停用打印机（拒绝任务 + 停用打印）
+ * @param {string} name - 打印机名称
+ * @returns {Promise<{ success: boolean }>}
+ * @throws {Error} 停用失败时抛出
+ */
+export async function disablePrinter(name) {
+  const log = getLogger();
+
+  try {
+    // 停用打印（cupsdisable）
+    await execFile('cupsdisable', [name]);
+    // 拒绝新任务（cupsreject）
+    await execFile('cupsreject', [name]);
+    log.info({ name }, '打印机已停用');
+    return { success: true };
+  } catch (err) {
+    throw new Error(`停用打印机失败 (${name}): ${err.message}`);
+  }
+}

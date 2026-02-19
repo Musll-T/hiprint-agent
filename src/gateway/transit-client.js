@@ -142,7 +142,8 @@ export function createTransitClient({ config, jobManager, printerAdapter, system
     // 推送客户端信息
     client.emit('clientInfo', systemInfo);
 
-    // 注册 jobManager 事件监听
+    // 注册 jobManager 事件监听（先移除旧监听器，防止重连时重复注册）
+    _removeJobListeners();
     jobManager.events.on('job:printed', onJobPrinted);
     jobManager.events.on('job:rendered', onJobRendered);
     jobManager.events.on('job:update', onJobUpdate);

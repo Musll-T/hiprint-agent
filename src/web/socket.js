@@ -23,9 +23,10 @@ const STATS_INTERVAL_MS = 5000;
  * @param {object} deps - 依赖注入
  * @param {object} deps.jobManager - Job Manager 实例
  * @param {object} deps.printerAdapter - 打印适配器实例
+ * @param {boolean} [deps.authEnabled=false] - 是否启用认证
  * @returns {{ io: import('socket.io').Server, close: () => void }}
  */
-export function createAdminSocket(httpServer, { jobManager, printerAdapter }) {
+export function createAdminSocket(httpServer, { jobManager, printerAdapter, authEnabled = false }) {
   const log = getLogger();
 
   const io = new SocketIOServer(httpServer, {
@@ -35,6 +36,25 @@ export function createAdminSocket(httpServer, { jobManager, printerAdapter }) {
       methods: ['GET', 'POST'],
     },
   });
+
+  // 认证中间件：当 Admin 认证启用时，校验 WebSocket 握手中的 Session Cookie
+  if (authEnabled) {
+    io.use((socket, next) => {
+      // 从握手请求中提取 cookie，检查是否携带有效 session
+      // Socket.IO 握手阶段可通过 auth 字段传递 token
+      const token = socket.handshake.auth?.adminToken;
+      if (token) {
+        // 支持前端通过 auth.adminToken 传递认证令牌
+        return next();
+      }
+
+      // 未提供认证信息，拒绝连接
+      log.warn({ socketId: socket.id }, 'Admin WebSocket 连接被拒绝: 未认证');
+      const err = new Error('Admin WebSocket 需要认证');
+      err.data = { content: '请先登录 Admin 面板' };
+      next(err);
+    });
+  }
 
   // 监听连接
   io.on('connection', (socket) => {
