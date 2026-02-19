@@ -897,6 +897,28 @@ h1, h2, h3, h4, h5, h6, p, small {
   border-color: var(--bg-hover);
 }
 
+.btn-copy {
+  color: var(--accent);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.btn-copy:hover {
+  background-color: var(--accent-soft);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.stat-value-id {
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  cursor: default;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .load-more {
   text-align: center;
   margin-top: 20px;

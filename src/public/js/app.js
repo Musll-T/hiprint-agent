@@ -454,6 +454,23 @@ const app = createApp({
     }
 
     // ----------------------------------------------------------
+    // 剪贴板工具
+    // ----------------------------------------------------------
+
+    /**
+     * 复制设备编号到剪贴板
+     */
+    function copyMachineId() {
+      const id = systemStats.value.system?.machineId;
+      if (!id) return;
+      navigator.clipboard.writeText(id).then(() => {
+        showToast('设备编号已复制', 'success');
+      }).catch(() => {
+        showToast('复制失败，请手动选取', 'error');
+      });
+    }
+
+    // ----------------------------------------------------------
     // Socket.IO 连接初始化
     // ----------------------------------------------------------
 
@@ -608,6 +625,7 @@ const app = createApp({
       loadMoreJobs,
       cancelJob,
       retryJob,
+      copyMachineId,
     };
   },
 });

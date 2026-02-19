@@ -127,6 +127,20 @@
               </div>
             </div>
           </article>
+
+          <!-- 设备编号卡片 -->
+          <article class="stat-card">
+            <div class="stat-card-header">
+              <span class="stat-icon">设备</span>
+            </div>
+            <div class="stat-body">
+              <p class="stat-value stat-value-id" :title="systemStats.system?.machineId || ''">{{ systemStats.system?.machineId ? systemStats.system.machineId.substring(0, 12) + '...' : '未获取' }}</p>
+              <p class="stat-label">设备编号</p>
+              <div class="stat-detail">
+                <button class="btn-sm btn-copy" v-if="systemStats.system?.machineId" @click="copyMachineId">复制</button>
+              </div>
+            </div>
+          </article>
         </div>
 
         <!-- 任务统计概览 -->

@@ -6,6 +6,7 @@ import { createPrinterAdapter } from './printer/adapter.js';
 import { createJobManager } from './jobs/manager.js';
 import { createGateway } from './gateway/server.js';
 import { createAdminWeb } from './web/server.js';
+import { getMachineId } from './utils/system.js';
 
 let browserPool = null;
 let jobManager = null;
@@ -25,6 +26,7 @@ async function main() {
   const log = initLogger(config);
 
   log.info('配置加载完成，端口: %d，管理端口: %d', config.port, config.adminPort);
+  log.info('设备编号 (machineId): %s', getMachineId() || '(无法获取)');
 
   // 2. 初始化日志（已在上方完成）
   log.info('日志系统就绪，级别: %s', config.logLevel);
