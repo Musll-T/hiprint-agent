@@ -13,6 +13,7 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { listJobs, getJob, countJobs } from '../../jobs/store.js';
 import { config } from '../../config.js';
+import { JobQuerySchema } from '../../schemas/api.schema.js';
 
 /**
  * 注册任务路由
@@ -26,11 +27,11 @@ export function jobRoutes(router, { jobManager }) {
   // 分页查询任务列表
   router.get('/api/jobs', (req, res, next) => {
     try {
-      const { status, limit = 50, offset = 0 } = req.query;
+      const { status, limit, offset } = JobQuerySchema.parse(req.query);
       const queryOpts = {
         status: status || undefined,
-        limit: Number(limit),
-        offset: Number(offset),
+        limit,
+        offset,
       };
       const jobs = listJobs(queryOpts);
       const total = countJobs({ status: status || undefined });

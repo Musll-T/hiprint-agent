@@ -40,6 +40,32 @@ services:
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Redis 服务（BullMQ 队列后端，可选）
+  #
+  # 启用步骤：
+  #   1. 取消下方 redis 服务注释
+  #   2. 在 config.json 中设置：
+  #      "queue": { "backend": "bullmq", "redis": { "host": "redis" } }
+  #   3. 在 hiprint-agent 服务中取消 depends_on 注释
+  #   4. 运行 npm install bullmq ioredis
+  # ---------------------------------------------------------------------------
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: hiprint-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   command: redis-server --appendonly yes
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+
 volumes:
   hiprint-data:
   hiprint-logs:
+  # redis-data:

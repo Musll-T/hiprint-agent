@@ -8,7 +8,6 @@
  *   - /api/login
  *   - /css/*
  *   - /js/login.js
- *   - /metrics
  */
 
 import { getLogger } from '../../logger.js';
@@ -18,7 +17,7 @@ const PUBLIC_PATHS = [
   '/health',
   '/login',
   '/api/login',
-  '/metrics',
+  // '/metrics' 已移至需认证保护（安全基线 Phase 0）
 ];
 
 /** 白名单路径前缀匹配 */

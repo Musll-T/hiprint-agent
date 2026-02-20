@@ -10,10 +10,21 @@ import bcrypt from 'bcryptjs';
 import { getConfig, updateConfig } from '../../config.js';
 import { addAuditLog } from '../../jobs/store.js';
 import { getLogger } from '../../logger.js';
+import { ConfigUpdateSchema } from '../../schemas/api.schema.js';
 
 /** 需要重启才能生效的参数列表 */
 const RESTART_REQUIRED_KEYS = new Set([
-  'port', 'adminPort', 'browserPoolSize', 'dbPath', 'allowEIO3',
+  'port',
+  'adminPort',
+  'browserPoolSize',
+  'dbPath',
+  'allowEIO3',
+  'renderConcurrency',
+  'printConcurrency',
+  'pageReuseLimit',
+  'connectTransit',
+  'transitUrl',
+  'agentId',
 ]);
 
 /**
@@ -26,16 +37,13 @@ function sanitizeConfig(cfg) {
 
   // token 脱敏：仅显示前 4 位 + 掩码
   if (sanitized.token) {
-    sanitized.token = sanitized.token.length > 4
-      ? sanitized.token.substring(0, 4) + '****'
-      : '****';
+    sanitized.token = sanitized.token.length > 4 ? sanitized.token.substring(0, 4) + '****' : '****';
   }
 
   // transitToken 脱敏
   if (sanitized.transitToken) {
-    sanitized.transitToken = sanitized.transitToken.length > 4
-      ? sanitized.transitToken.substring(0, 4) + '****'
-      : '****';
+    sanitized.transitToken =
+      sanitized.transitToken.length > 4 ? sanitized.transitToken.substring(0, 4) + '****' : '****';
   }
 
   // admin 脱敏
@@ -75,12 +83,9 @@ export function configRoutes(router) {
   });
 
   // 更新配置
-  router.put('/api/config', async (req, res) => {
+  router.put('/api/config', async (req, res, next) => {
     try {
-      const partial = req.body;
-      if (!partial || typeof partial !== 'object' || Array.isArray(partial)) {
-        return res.status(400).json({ error: '请求体必须为 JSON 对象' });
-      }
+      const partial = ConfigUpdateSchema.parse(req.body);
 
       // 删除客户端不应修改的元数据字段
       delete partial._meta;
@@ -144,9 +149,7 @@ export function configRoutes(router) {
         config: sanitizeConfig(updated),
       });
     } catch (err) {
-      log.error({ err }, '更新配置失败');
-      const statusCode = err.message.includes('校验失败') ? 400 : 500;
-      res.status(statusCode).json({ error: `更新配置失败: ${err.message}` });
+      next(err);
     }
   });
 

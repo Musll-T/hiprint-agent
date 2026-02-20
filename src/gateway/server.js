@@ -17,6 +17,7 @@ import { Server } from 'socket.io';
 import { getLogger } from '../logger.js';
 import { createAuthMiddleware, createIpFilter } from './auth.js';
 import { registerEvents } from './events.js';
+import { createEventDispatcher } from './event-dispatcher.js';
 import { FragmentManager } from '../utils/fragments.js';
 import { getSystemInfo } from '../utils/system.js';
 import { getAllAddresses } from '../utils/network.js';
@@ -52,8 +53,8 @@ export async function createGateway({ config, jobManager, printerAdapter }) {
     allowEIO3: config.allowEIO3 !== undefined ? config.allowEIO3 : true,
     // CORS 配置
     cors: config.cors || { origin: '*', methods: ['GET', 'POST'] },
-    // 最大 HTTP 缓冲区大小：100MB，支持大型打印内容传输
-    maxHttpBufferSize: 100 * 1024 * 1024,
+    // 最大 HTTP 缓冲区大小：8MB（大型内容请使用 printByFragments 分片传输）
+    maxHttpBufferSize: 8 * 1024 * 1024,
   });
 
   // ------------------------------------------------------------------
@@ -91,19 +92,26 @@ export async function createGateway({ config, jobManager, printerAdapter }) {
   };
 
   // ------------------------------------------------------------------
-  // 6. 注册连接事件处理器
+  // 6. 创建全局事件分派器和结果路由器（进程级单例）
+  // ------------------------------------------------------------------
+  const dispatcher = createEventDispatcher({ jobManager, printerAdapter, systemInfo });
+  const globalRouter = dispatcher.createGlobalResultRouter(io);
+  globalRouter.attach();
+
+  // ------------------------------------------------------------------
+  // 7. 注册连接事件处理器
   // ------------------------------------------------------------------
   io.on('connection', (socket) => {
     registerEvents(socket, {
-      jobManager,
-      printerAdapter,
+      dispatcher,
+      globalRouter,
       fragmentManager,
       systemInfo,
     });
   });
 
   // ------------------------------------------------------------------
-  // 7. 启动 HTTP 服务监听
+  // 8. 启动 HTTP 服务监听
   // ------------------------------------------------------------------
   await new Promise((resolve, reject) => {
     httpServer.once('error', reject);
@@ -115,7 +123,7 @@ export async function createGateway({ config, jobManager, printerAdapter }) {
   });
 
   // ------------------------------------------------------------------
-  // 8. 返回实例和关闭方法
+  // 9. 返回实例和关闭方法
   // ------------------------------------------------------------------
   return {
     io,
@@ -125,10 +133,13 @@ export async function createGateway({ config, jobManager, printerAdapter }) {
     /**
      * 优雅关闭 Gateway
      *
-     * 按顺序：销毁分片管理器 → 断开所有连接 → 关闭 Socket.IO → 关闭 HTTP Server
+     * 按顺序：销毁全局路由器 → 销毁分片管理器 → 断开所有连接 → 关闭 Socket.IO → 关闭 HTTP Server
      */
     async close() {
       log.info('Socket Gateway 正在关闭...');
+
+      // 移除全局 jobManager 事件监听器
+      globalRouter.detach();
 
       // 销毁分片管理器（清理定时器和缓存）
       fragmentManager.destroy();

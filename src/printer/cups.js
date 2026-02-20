@@ -8,6 +8,7 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { getLogger } from '../logger.js';
+import { withSpan } from '../observability/tracing.js';
 
 const execFile = promisify(execFileCb);
 
@@ -185,31 +186,38 @@ export async function getQueueJobs(printer) {
  * @throws {Error} 提交失败时抛出
  */
 export async function printFile(filePath, printer, options = []) {
-  const log = getLogger();
+  return withSpan('cups.print', {
+    'cups.printer': printer,
+    'cups.file': filePath,
+  }, async (span) => {
+    const log = getLogger();
 
-  if (!filePath || !printer) {
-    throw new Error('filePath 和 printer 参数不能为空');
-  }
+    if (!filePath || !printer) {
+      throw new Error('filePath 和 printer 参数不能为空');
+    }
 
-  // 构建参数: lp -d <printer> [options...] <file>
-  const args = ['-d', printer, ...options, filePath];
+    // 构建参数: lp -d <printer> [options...] <file>
+    const args = ['-d', printer, ...options, filePath];
 
-  let stdout;
-  try {
-    const result = await execFile('lp', args);
-    stdout = result.stdout || '';
-  } catch (err) {
-    log.error({ printer, filePath, message: err.message }, '打印任务提交失败');
-    throw new Error(`打印任务提交失败: ${err.message}`);
-  }
+    let stdout;
+    try {
+      const result = await execFile('lp', args);
+      stdout = result.stdout || '';
+    } catch (err) {
+      log.error({ printer, filePath, message: err.message }, '打印任务提交失败');
+      throw new Error(`打印任务提交失败: ${err.message}`);
+    }
 
-  // 从 lp 输出中解析 job ID
-  // 格式: "request id is <printer>-<number> (1 file(s))"
-  const idMatch = stdout.match(/request id is (\S+)/);
-  const jobId = idMatch ? idMatch[1] : 'unknown';
+    // 从 lp 输出中解析 job ID
+    // 格式: "request id is <printer>-<number> (1 file(s))"
+    const idMatch = stdout.match(/request id is (\S+)/);
+    const jobId = idMatch ? idMatch[1] : 'unknown';
 
-  log.info({ jobId, printer, filePath }, '打印任务已提交');
-  return { jobId };
+    span?.setAttribute('cups.job_id', jobId);
+
+    log.info({ jobId, printer, filePath }, '打印任务已提交');
+    return { jobId };
+  });
 }
 
 /**

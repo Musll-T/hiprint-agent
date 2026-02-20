@@ -1,6 +1,8 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ZodError } from 'zod';
+import { ConfigSchema } from './schemas/config.schema.js';
 
 // 项目根目录（package.json 所在目录）
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -16,102 +18,21 @@ let _config = null;
 let _configPath = DEFAULT_CONFIG_PATH;
 
 /**
- * 校验配置项合法性
+ * 校验配置项合法性（基于 Zod Schema）
  * @param {object} cfg - 待校验的配置对象
- * @throws {Error} 校验失败时抛出错误
+ * @throws {Error} 校验失败时抛出错误，错误信息兼容旧格式
  */
 function validateConfig(cfg) {
-  const errors = [];
-
-  // 端口范围校验
-  if (cfg.port !== undefined) {
-    if (!Number.isInteger(cfg.port) || cfg.port < 1024 || cfg.port > 65535) {
-      errors.push(`port 必须为 1024-65535 之间的整数，当前值: ${cfg.port}`);
+  try {
+    return ConfigSchema.parse(cfg);
+  } catch (err) {
+    if (err instanceof ZodError) {
+      const messages = err.errors.map((e) => `${e.path.join('.')} ${e.message}`);
+      const error = new Error(`配置校验失败:\n  - ${messages.join('\n  - ')}`);
+      error.statusCode = 400;
+      throw error;
     }
-  }
-  if (cfg.adminPort !== undefined) {
-    if (!Number.isInteger(cfg.adminPort) || cfg.adminPort < 1024 || cfg.adminPort > 65535) {
-      errors.push(`adminPort 必须为 1024-65535 之间的整数，当前值: ${cfg.adminPort}`);
-    }
-  }
-
-  // 并发数校验
-  if (cfg.renderConcurrency !== undefined) {
-    if (!Number.isInteger(cfg.renderConcurrency) || cfg.renderConcurrency < 1 || cfg.renderConcurrency > 20) {
-      errors.push(`renderConcurrency 必须为 1-20 之间的整数，当前值: ${cfg.renderConcurrency}`);
-    }
-  }
-  if (cfg.printConcurrency !== undefined) {
-    if (!Number.isInteger(cfg.printConcurrency) || cfg.printConcurrency < 1 || cfg.printConcurrency > 20) {
-      errors.push(`printConcurrency 必须为 1-20 之间的整数，当前值: ${cfg.printConcurrency}`);
-    }
-  }
-  if (cfg.browserPoolSize !== undefined) {
-    if (!Number.isInteger(cfg.browserPoolSize) || cfg.browserPoolSize < 1 || cfg.browserPoolSize > 20) {
-      errors.push(`browserPoolSize 必须为 1-20 之间的整数，当前值: ${cfg.browserPoolSize}`);
-    }
-  }
-
-  // 预览目录校验
-  if (cfg.previewDir !== undefined) {
-    if (typeof cfg.previewDir !== 'string') {
-      errors.push(`previewDir 必须为字符串类型，当前值: ${cfg.previewDir}`);
-    }
-  }
-
-  // 队列大小校验
-  if (cfg.maxQueueSize !== undefined) {
-    if (!Number.isInteger(cfg.maxQueueSize) || cfg.maxQueueSize < 1 || cfg.maxQueueSize > 10000) {
-      errors.push(`maxQueueSize 必须为 1-10000 之间的整数，当前值: ${cfg.maxQueueSize}`);
-    }
-  }
-
-  // agentId 校验（可选，用于中转模式下的稳定标识）
-  if (cfg.agentId !== undefined && cfg.agentId !== '') {
-    if (typeof cfg.agentId !== 'string') {
-      errors.push(`agentId 必须为字符串类型，当前值: ${cfg.agentId}`);
-    }
-  }
-
-  // 中转客户端配置校验
-  if (cfg.connectTransit !== undefined && typeof cfg.connectTransit !== 'boolean') {
-    errors.push(`connectTransit 必须为 boolean 类型，当前值: ${cfg.connectTransit}`);
-  }
-  if (cfg.connectTransit === true) {
-    if (!cfg.transitUrl || typeof cfg.transitUrl !== 'string') {
-      errors.push('connectTransit 启用时 transitUrl 必须为非空字符串');
-    } else {
-      try {
-        const url = new URL(cfg.transitUrl);
-        const allowed = new Set(['http:', 'https:', 'ws:', 'wss:']);
-        if (!allowed.has(url.protocol)) {
-          errors.push(`transitUrl 协议不支持: ${url.protocol}，仅允许 http/https/ws/wss`);
-        }
-      } catch {
-        errors.push(`transitUrl 格式非法: ${cfg.transitUrl}`);
-      }
-    }
-    if (!cfg.transitToken || typeof cfg.transitToken !== 'string') {
-      errors.push('connectTransit 启用时 transitToken 必须为非空字符串');
-    }
-  }
-
-  // Admin 认证配置校验（可选，不存在时禁用认证）
-  if (cfg.admin !== undefined) {
-    if (typeof cfg.admin !== 'object' || cfg.admin === null || Array.isArray(cfg.admin)) {
-      errors.push('admin 必须为对象类型');
-    } else {
-      if (!cfg.admin.username || typeof cfg.admin.username !== 'string') {
-        errors.push('admin.username 必须为非空字符串');
-      }
-      if (!cfg.admin.password || typeof cfg.admin.password !== 'string') {
-        errors.push('admin.password 必须为非空字符串');
-      }
-    }
-  }
-
-  if (errors.length > 0) {
-    throw new Error(`配置校验失败:\n  - ${errors.join('\n  - ')}`);
+    throw err;
   }
 }
 
@@ -126,9 +47,7 @@ export function loadConfig(configPath) {
   const raw = readFileSync(_configPath, 'utf-8');
   const parsed = JSON.parse(raw);
 
-  validateConfig(parsed);
-
-  _config = parsed;
+  _config = validateConfig(parsed);
   return getConfig();
 }
 
@@ -166,10 +85,12 @@ export function updateConfig(partial) {
   }
 
   // 对合并结果做全量校验
-  validateConfig(merged);
+  _config = validateConfig(merged);
 
-  _config = merged;
-  writeFileSync(_configPath, JSON.stringify(_config, null, 2), 'utf-8');
+  // 原子写盘：先写临时文件再 rename，防止崩溃损坏 config.json
+  const tmpPath = _configPath + '.tmp';
+  writeFileSync(tmpPath, JSON.stringify(_config, null, 2), 'utf-8');
+  renameSync(tmpPath, _configPath);
 
   return getConfig();
 }
@@ -198,5 +119,5 @@ export const config = new Proxy(
       }
       return undefined;
     },
-  }
+  },
 );

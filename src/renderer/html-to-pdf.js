@@ -6,6 +6,7 @@
  */
 
 import { getLogger } from '../logger.js';
+import { withSpan } from '../observability/tracing.js';
 import { injectResources } from './resources.js';
 
 /**
@@ -88,67 +89,89 @@ function resolveMargins(margins) {
  * @param {boolean} [options.printBackground=true] - 是否打印背景
  * @param {string} [options.headerTemplate] - 页眉 HTML 模板
  * @param {string} [options.footerTemplate] - 页脚 HTML 模板
+ * @param {AbortSignal} [signal] - 可选的中止信号，超时时主动关闭页面
  * @returns {Promise<{ buffer: Buffer, duration: number }>} PDF Buffer 和渲染耗时（毫秒）
  */
-export async function renderPDF(pool, html, options = {}) {
-  const log = getLogger();
-  const startTime = Date.now();
+export async function renderPDF(pool, html, options = {}, signal) {
+  return withSpan('render.pdf', { 'render.type': 'pdf' }, async (span) => {
+    const log = getLogger();
+    const startTime = Date.now();
 
-  const { page, release } = await pool.acquirePage();
-
-  try {
-    // 设置 HTML 内容，等待网络空闲
-    await page.setContent(html, { waitUntil: 'networkidle' });
-
-    // 注入条码/二维码等依赖资源
-    await injectResources(page);
-
-    // 等待条码/二维码等异步渲染完成（智能等待：检测 canvas/svg 元素渲染就绪）
-    await page.waitForFunction(
-      () => {
-        // 检测所有 canvas 元素是否已有内容（bwip-js/JsBarcode 渲染到 canvas）
-        const canvases = document.querySelectorAll('canvas');
-        for (const c of canvases) {
-          if (c.width === 0 || c.height === 0) return false;
-        }
-        return true;
-      },
-      { timeout: RENDER_SETTLE_MAX_MS }
-    ).catch(() => {
-      // 超时不中断，继续生成 PDF
-    });
-    // 最少等待一小段时间确保简单 canvas 绘制完成
-    await page.waitForTimeout(RENDER_SETTLE_MIN_MS);
-
-    // 构建 Playwright pdf() 参数
-    const pageSizeOpts = resolvePageSize(options.pageSize);
-    const marginOpts = resolveMargins(options.margins);
-
-    const pdfOptions = {
-      ...pageSizeOpts,
-      margin: marginOpts,
-      landscape: options.landscape ?? false,
-      scale: Math.max(0.1, Math.min(2, options.scale ?? 1)),
-      printBackground: options.printBackground ?? true,
-    };
-
-    // 页眉页脚（需要同时提供 displayHeaderFooter 才生效）
-    if (options.headerTemplate || options.footerTemplate) {
-      pdfOptions.displayHeaderFooter = true;
-      pdfOptions.headerTemplate = options.headerTemplate || '<span></span>';
-      pdfOptions.footerTemplate = options.footerTemplate || '<span></span>';
+    // 若已中止则直接抛错，避免无谓地获取页面
+    if (signal?.aborted) {
+      throw new Error('渲染在开始前已被中止');
     }
 
-    const buffer = await page.pdf(pdfOptions);
-    const duration = Date.now() - startTime;
+    const { page, release } = await pool.acquirePage();
 
-    log.debug({ duration, size: buffer.length }, 'PDF 渲染完成');
+    // abort 事件监听器：强制关闭页面以终止 Playwright 操作
+    let aborted = false;
+    const onAbort = () => {
+      aborted = true;
+      page.close().catch(() => {});
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
 
-    return { buffer, duration };
-  } catch (err) {
-    log.error({ err }, 'PDF 渲染失败');
-    throw err;
-  } finally {
-    release();
-  }
+    try {
+      // 设置 HTML 内容，等待网络空闲
+      await page.setContent(html, { waitUntil: 'networkidle' });
+
+      // 注入条码/二维码等依赖资源
+      await injectResources(page);
+
+      // 等待条码/二维码等异步渲染完成（智能等待：检测 canvas/svg 元素渲染就绪）
+      await page.waitForFunction(
+        () => {
+          // 检测所有 canvas 元素是否已有内容（bwip-js/JsBarcode 渲染到 canvas）
+          const canvases = document.querySelectorAll('canvas');
+          for (const c of canvases) {
+            if (c.width === 0 || c.height === 0) return false;
+          }
+          return true;
+        },
+        { timeout: RENDER_SETTLE_MAX_MS }
+      ).catch(() => {
+        // 超时不中断，继续生成 PDF
+      });
+      // 最少等待一小段时间确保简单 canvas 绘制完成
+      await page.waitForTimeout(RENDER_SETTLE_MIN_MS);
+
+      // 构建 Playwright pdf() 参数
+      const pageSizeOpts = resolvePageSize(options.pageSize);
+      const marginOpts = resolveMargins(options.margins);
+
+      const pdfOptions = {
+        ...pageSizeOpts,
+        margin: marginOpts,
+        landscape: options.landscape ?? false,
+        scale: Math.max(0.1, Math.min(2, options.scale ?? 1)),
+        printBackground: options.printBackground ?? true,
+      };
+
+      // 页眉页脚（需要同时提供 displayHeaderFooter 才生效）
+      if (options.headerTemplate || options.footerTemplate) {
+        pdfOptions.displayHeaderFooter = true;
+        pdfOptions.headerTemplate = options.headerTemplate || '<span></span>';
+        pdfOptions.footerTemplate = options.footerTemplate || '<span></span>';
+      }
+
+      const buffer = await page.pdf(pdfOptions);
+      const duration = Date.now() - startTime;
+
+      // 记录 span 属性
+      span?.setAttribute('render.duration_ms', duration);
+      span?.setAttribute('render.output_bytes', buffer.length);
+
+      log.debug({ duration, size: buffer.length }, 'PDF 渲染完成');
+
+      return { buffer, duration };
+    } catch (err) {
+      log.error({ err }, 'PDF 渲染失败');
+      throw err;
+    } finally {
+      signal?.removeEventListener('abort', onAbort);
+      // 被 abort 的页面已被 close，不可回收，需销毁
+      release({ destroy: aborted });
+    }
+  });
 }

@@ -12,7 +12,14 @@ import Database from 'better-sqlite3';
 import dayjs from 'dayjs';
 import { v7 as uuidv7 } from 'uuid';
 import { getLogger } from '../logger.js';
+import { runMigrations } from './migrator.js';
+import { up as migration001 } from './migrations/001_add_print_options.js';
 import { JobStatus, TERMINAL_STATUSES } from './types.js';
+
+// 迁移注册表（新增迁移时在此追加）
+const MIGRATIONS = [
+  { version: '001_add_print_options', up: migration001 },
+];
 
 /** @type {import('better-sqlite3').Database | null} */
 let db = null;
@@ -29,6 +36,7 @@ let stmtListJobs = null;
 let stmtListJobsByStatus = null;
 let stmtCountAll = null;
 let stmtCountByStatus = null;
+let stmtGetRecoverableJobs = null;
 
 // ============================================================
 // 内部工具函数
@@ -144,13 +152,6 @@ export function initDB(dbPath) {
     )
   `);
 
-  // 已有数据库迁移：为旧版 jobs 表添加 print_options 列
-  const columns = db.pragma('table_info(jobs)');
-  if (!columns.some((col) => col.name === 'print_options')) {
-    db.exec('ALTER TABLE jobs ADD COLUMN print_options TEXT');
-    log.info('数据库迁移：已添加 print_options 列');
-  }
-
   // 创建 audit_log 表
   db.exec(`
     CREATE TABLE IF NOT EXISTS audit_log (
@@ -170,6 +171,9 @@ export function initDB(dbPath) {
     CREATE INDEX IF NOT EXISTS idx_audit_log_job_id ON audit_log(job_id);
   `);
 
+  // 执行数据库迁移
+  runMigrations(db, MIGRATIONS);
+
   // 预编译常用 SQL 语句
   stmtInsertJob = db.prepare(`
     INSERT INTO jobs (id, status, printer, template_id, type, client_id, tenant_id,
@@ -182,7 +186,7 @@ export function initDB(dbPath) {
 
   stmtUpdateStatus = db.prepare(`
     UPDATE jobs SET status = @status, updated_at = @updated_at,
-                    error_msg = COALESCE(@error_msg, error_msg),
+                    error_msg = CASE WHEN @has_error_msg = 1 THEN @error_msg ELSE error_msg END,
                     render_duration = COALESCE(@render_duration, render_duration),
                     print_duration = COALESCE(@print_duration, print_duration),
                     retry_count = COALESCE(@retry_count, retry_count),
@@ -208,6 +212,11 @@ export function initDB(dbPath) {
   // countJobs 预编译语句
   stmtCountAll = db.prepare('SELECT COUNT(*) as total FROM jobs');
   stmtCountByStatus = db.prepare('SELECT COUNT(*) as total FROM jobs WHERE status = ?');
+
+  // 可恢复任务查询（非终态 + 非取消）
+  stmtGetRecoverableJobs = db.prepare(
+    "SELECT * FROM jobs WHERE status IN ('received', 'rendering', 'printing') ORDER BY created_at ASC"
+  );
 
   log.info('数据库表和索引已就绪');
 
@@ -273,12 +282,14 @@ export function createJob(job) {
 export function updateJobStatus(id, status, extra = {}) {
   ensureDB();
 
+  const hasErrorMsg = 'errorMsg' in extra;
   const now = dayjs().toISOString();
   const params = {
     id,
     status,
     updated_at: now,
-    error_msg: extra.errorMsg ?? null,
+    has_error_msg: hasErrorMsg ? 1 : 0,
+    error_msg: hasErrorMsg ? (extra.errorMsg ?? null) : null,
     render_duration: extra.renderDuration ?? null,
     print_duration: extra.printDuration ?? null,
     retry_count: extra.retryCount ?? null,
@@ -413,6 +424,19 @@ export function getJobStats() {
 }
 
 /**
+ * 查询所有可恢复的任务（非终态中间状态）
+ *
+ * 用于服务重启后恢复处理中断的任务。
+ * 返回状态为 received/rendering/printing 的任务，按创建时间升序排列。
+ *
+ * @returns {import('./types.js').Job[]} 可恢复任务列表
+ */
+export function getRecoverableJobs() {
+  ensureDB();
+  return stmtGetRecoverableJobs.all().map(rowToJob);
+}
+
+/**
  * 清理过期任务
  *
  * 删除 N 天前处于终态（done / failed_render / failed_print / canceled / timeout）的任务及其审计日志。
@@ -504,6 +528,7 @@ export function closeDB() {
     stmtListJobsByStatus = null;
     stmtCountAll = null;
     stmtCountByStatus = null;
+    stmtGetRecoverableJobs = null;
 
     log.info('数据库连接已关闭');
   }

@@ -8,6 +8,17 @@
 import { getLogger } from '../logger.js';
 
 /**
+ * 脱敏 Token 字符串，仅保留前 4 位
+ * @param {string} str - 原始 Token
+ * @returns {string} 脱敏后的字符串
+ */
+function maskToken(str) {
+  if (!str) return '(empty)';
+  if (str.length <= 4) return '****';
+  return str.slice(0, 4) + '****';
+}
+
+/**
  * 创建 Token 认证中间件
  *
  * 校验逻辑：
@@ -37,7 +48,7 @@ export function createAuthMiddleware(config) {
 
     // Token 不匹配
     log.warn(
-      { socketId: socket.id, clientToken },
+      { socketId: socket.id, clientToken: maskToken(clientToken) },
       '客户端 Token 认证失败'
     );
 

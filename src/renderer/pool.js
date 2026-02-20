@@ -126,11 +126,18 @@ export function createBrowserPool(options = {}) {
 
     // 池中无可复用页面，但并发数未满，创建新页面
     if (activeCount < poolSize) {
-      const entry = await createPageEntry();
-      entry.idle = false;
-      entry.useCount++;
+      // 先预占配额，防止 await 期间其他并发请求超配
       activeCount++;
-      return wrapPageEntry(entry);
+      try {
+        const entry = await createPageEntry();
+        entry.idle = false;
+        entry.useCount++;
+        return wrapPageEntry(entry);
+      } catch (err) {
+        // 创建失败，回滚预占配额
+        activeCount--;
+        throw err;
+      }
     }
 
     // 并发数已满，进入等待队列（带超时保护）
@@ -153,18 +160,22 @@ export function createBrowserPool(options = {}) {
   /**
    * 包装页面条目为对外返回的格式，附带 release 函数
    * @param {PageEntry} entry
-   * @returns {{ page: import('playwright').Page, release: () => void }}
+   * @returns {{ page: import('playwright').Page, release: (opts?: { destroy?: boolean }) => void }}
    */
   function wrapPageEntry(entry) {
     let released = false;
 
     return {
       page: entry.page,
-      release: () => {
+      /**
+       * 释放页面回池中
+       * @param {{ destroy?: boolean }} [opts] - destroy=true 时直接销毁页面而不回收
+       */
+      release: ({ destroy = false } = {}) => {
         // 防止重复释放
         if (released) return;
         released = true;
-        releaseEntry(entry);
+        releaseEntry(entry, { destroy });
       },
     };
   }
@@ -172,16 +183,17 @@ export function createBrowserPool(options = {}) {
   /**
    * 归还页面条目到池中
    *
-   * 如果页面使用次数已达上限，销毁并重建；
+   * 如果 destroy=true 或页面使用次数已达上限，销毁并重建；
    * 如果有等待者，直接分配给下一个等待者。
    *
    * @param {PageEntry} entry
+   * @param {{ destroy?: boolean }} [opts]
    */
-  async function releaseEntry(entry) {
+  async function releaseEntry(entry, { destroy = false } = {}) {
     activeCount--;
 
-    // 页面使用次数超限，需要销毁并重建
-    if (entry.useCount >= pageReuseLimit) {
+    // 强制销毁或页面使用次数超限，需要销毁并重建
+    if (destroy || entry.useCount >= pageReuseLimit) {
       await destroyPageEntry(entry);
 
       // 如果有等待者，创建新页面分配给它

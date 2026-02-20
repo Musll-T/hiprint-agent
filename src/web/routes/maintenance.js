@@ -11,6 +11,7 @@
  */
 
 import { addAuditLog } from '../../jobs/store.js';
+import { CupsLogsQuerySchema } from '../../schemas/api.schema.js';
 
 /**
  * 注册维护路由
@@ -25,7 +26,11 @@ export function maintenanceRoutes(router, { maintenanceService }) {
   router.post('/api/maintenance/queues/clear', async (req, res) => {
     try {
       const result = await maintenanceService.clearAllQueues();
-      addAuditLog(null, 'api_clear_queues', `API 调用清空队列: CUPS=${result.cupsCleared}, 内部=${result.internalCanceled}`);
+      addAuditLog(
+        null,
+        'api_clear_queues',
+        `API 调用清空队列: CUPS=${result.cupsCleared}, 内部=${result.internalCanceled}`,
+      );
       res.json(result);
     } catch (err) {
       res.status(500).json({ error: `清空队列失败: ${err.message}` });
@@ -69,13 +74,13 @@ export function maintenanceRoutes(router, { maintenanceService }) {
   });
 
   // 获取 CUPS 错误日志
-  router.get('/api/maintenance/cups/logs', async (req, res) => {
+  router.get('/api/maintenance/cups/logs', async (req, res, next) => {
     try {
-      const lines = Math.min(Math.max(parseInt(req.query.lines, 10) || 100, 1), 1000);
+      const { lines } = CupsLogsQuerySchema.parse(req.query);
       const logContent = await maintenanceService.getCupsErrorLog(lines);
       res.json({ lines, content: logContent });
     } catch (err) {
-      res.status(500).json({ error: `获取 CUPS 日志失败: ${err.message}` });
+      next(err);
     }
   });
 

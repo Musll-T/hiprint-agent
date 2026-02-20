@@ -14,7 +14,9 @@ import crypto from 'node:crypto';
 import express from 'express';
 import session from 'express-session';
 import bcrypt from 'bcryptjs';
+import { ZodError } from 'zod';
 import { getLogger } from '../logger.js';
+import { AppError } from '../errors.js';
 import { healthRoutes } from './routes/health.js';
 import { statusRoutes } from './routes/status.js';
 import { printerRoutes } from './routes/printers.js';
@@ -24,6 +26,7 @@ import { maintenanceRoutes } from './routes/maintenance.js';
 import { configRoutes } from './routes/config.js';
 import { createAdminSocket } from './socket.js';
 import { createAuthMiddleware } from './middleware/auth.js';
+import { generateOpenAPIDocument } from './openapi.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -38,7 +41,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  * @param {import('socket.io').Server} [deps.gatewayIo] - Socket Gateway 的 IO 实例（用于获取连接数）
  * @returns {Promise<{ app: import('express').Express, httpServer: import('node:http').Server, close: () => Promise<void> }>}
  */
-export async function createAdminWeb({ config, jobManager, printerAdapter, printerAdmin, maintenanceService, gatewayIo, transitClient }) {
+export async function createAdminWeb({
+  config,
+  jobManager,
+  printerAdapter,
+  printerAdmin,
+  maintenanceService,
+  gatewayIo,
+  transitClient,
+}) {
   const log = getLogger();
   const app = express();
 
@@ -65,24 +76,36 @@ export async function createAdminWeb({ config, jobManager, printerAdapter, print
   // Session 与认证中间件（仅在 config.admin 存在时启用）
   // ============================================================
 
+  // OpenAPI 文档端点（公开，在认证中间件之前注册，无需登录）
+  app.get('/openapi.json', (_req, res) => {
+    res.json(generateOpenAPIDocument());
+  });
+
   const authEnabled = !!(config.admin && config.admin.username && config.admin.password);
+  let sessionMiddleware = null;
   const publicDir = resolve(__dirname, '..', 'public');
 
   if (authEnabled) {
+    // 信任代理（反向代理场景下正确获取协议）
+    app.set('trust proxy', 1);
+
     // express-session 配置
     const sessionSecret = config.admin.sessionSecret || crypto.randomBytes(32).toString('hex');
     if (!config.admin.sessionSecret) {
       log.warn('admin.sessionSecret 未配置，每次重启将导致所有 session 失效。建议在 config.json 中设置固定值');
     }
-    app.use(session({
+    sessionMiddleware = session({
       secret: sessionSecret,
       resave: false,
       saveUninitialized: false,
       cookie: {
         httpOnly: true,
+        sameSite: 'lax',
+        secure: 'auto', // HTTPS 环境下自动启用 Secure 标志
         maxAge: 24 * 60 * 60 * 1000, // 24 小时
       },
-    }));
+    });
+    app.use(sessionMiddleware);
 
     // 登录页路由（在 auth 中间件之前注册，避免循环重定向）
     app.get('/login', (_req, res) => {
@@ -115,12 +138,17 @@ export async function createAdminWeb({ config, jobManager, printerAdapter, print
         return res.status(500).json({ error: '服务器内部错误' });
       }
 
-      // 认证成功，创建 session
-      req.session.authenticated = true;
-      req.session.username = username;
-      log.info({ username }, '用户登录成功');
-
-      return res.json({ ok: true });
+      // 认证成功，重新生成 session 防止 session 固定攻击
+      req.session.regenerate((err) => {
+        if (err) {
+          log.error({ err }, 'Session 重新生成失败');
+          return res.status(500).json({ error: '服务器内部错误' });
+        }
+        req.session.authenticated = true;
+        req.session.username = username;
+        log.info({ username }, '用户登录成功');
+        return res.json({ ok: true });
+      });
     });
 
     // 登出接口
@@ -162,6 +190,7 @@ export async function createAdminWeb({ config, jobManager, printerAdapter, print
   const deps = { jobManager, printerAdapter, printerAdmin, maintenanceService, getConnectionCount, transitClient };
 
   healthRoutes(app, deps);
+
   statusRoutes(app, deps);
   printerRoutes(app, deps);
   jobRoutes(app, deps);
@@ -176,6 +205,25 @@ export async function createAdminWeb({ config, jobManager, printerAdapter, print
   // eslint-disable-next-line no-unused-vars
   app.use((err, _req, res, _next) => {
     log.error({ err }, '请求处理异常');
+
+    // Zod 校验错误 -> 400
+    if (err instanceof ZodError) {
+      return res.status(400).json({
+        code: 'VALIDATION_ERROR',
+        error: '请求参数校验失败',
+        details: err.errors,
+      });
+    }
+
+    // 应用结构化错误
+    if (err instanceof AppError) {
+      return res.status(err.statusCode).json({
+        code: err.code,
+        error: err.message,
+      });
+    }
+
+    // 兜底：未知错误
     const statusCode = err.statusCode || 500;
     res.status(statusCode).json({
       error: err.message || '服务器内部错误',
@@ -190,7 +238,13 @@ export async function createAdminWeb({ config, jobManager, printerAdapter, print
   const port = config.adminPort || 17522;
 
   // 挂载 Admin WebSocket（传递认证状态，确保 WebSocket 也受到保护）
-  const adminSocket = createAdminSocket(httpServer, { jobManager, printerAdapter, authEnabled });
+  const adminSocket = createAdminSocket(httpServer, {
+    jobManager,
+    printerAdapter,
+    authEnabled,
+    sessionMiddleware,
+    config,
+  });
 
   await new Promise((resolve, reject) => {
     httpServer.listen(port, () => {

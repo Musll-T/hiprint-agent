@@ -11,6 +11,8 @@
  *   POST   /api/printers/:name/disable - 停用打印机
  */
 
+import { PrinterCreateSchema, PrinterUpdateSchema } from '../../schemas/api.schema.js';
+
 /**
  * 注册打印机路由
  *
@@ -37,14 +39,11 @@ export function printerRoutes(router, { printerAdapter, printerAdmin }) {
       return res.status(501).json({ error: '打印机管理功能未启用' });
     }
     try {
-      const { name, deviceUri, model, description, location } = req.body;
-      if (!name || !deviceUri) {
-        return res.status(400).json({ error: 'name 和 deviceUri 为必填项' });
-      }
+      const { name, deviceUri, model, description, location } = PrinterCreateSchema.parse(req.body);
       const result = await printerAdmin.add({ name, deviceUri, model, description, location });
       res.status(201).json(result);
     } catch (err) {
-      res.status(400).json({ error: err.message });
+      next(err);
     }
   });
 
@@ -54,11 +53,11 @@ export function printerRoutes(router, { printerAdapter, printerAdmin }) {
       return res.status(501).json({ error: '打印机管理功能未启用' });
     }
     try {
-      const { description, location, deviceUri } = req.body;
+      const { description, location, deviceUri } = PrinterUpdateSchema.parse(req.body);
       const result = await printerAdmin.update(req.params.name, { description, location, deviceUri });
       res.json(result);
     } catch (err) {
-      res.status(400).json({ error: err.message });
+      next(err);
     }
   });
 

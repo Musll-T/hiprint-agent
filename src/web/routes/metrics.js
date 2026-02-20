@@ -1,9 +1,10 @@
 /**
  * Prometheus 指标路由
  *
- * 提供 GET /metrics 端点，以 Prometheus exposition format 输出关键运行指标。
- * 可直接被 Prometheus server 抓取，无需额外 exporter。
+ * 使用 prom-client 注册表提供标准 Prometheus exposition format。
+ * 包含默认 Node.js 指标和自定义 hiprint-agent 业务指标。
  */
+import { getRegistry, setQueueDepth } from '../../observability/metrics.js';
 
 /**
  * 注册 Prometheus 指标路由
@@ -14,34 +15,20 @@
  * @returns {import('express').Router} 注册后的路由实例
  */
 export function metricsRoutes(router, { jobManager }) {
-  router.get('/metrics', (_req, res) => {
+  router.get('/metrics', async (_req, res) => {
+    // 每次采集时从 jobManager 同步队列深度等实时 gauge
     const stats = jobManager.getStats();
-    const lines = [];
+    setQueueDepth('render', stats.renderPending || 0);
+    setQueueDepth('print', stats.printPending || 0);
+    setQueueDepth('waiting', stats.queueSize || 0);
 
-    // 按状态统计的任务总数
-    lines.push('# HELP hiprint_jobs_total Total number of jobs by status');
-    lines.push('# TYPE hiprint_jobs_total gauge');
-
-    // 跳过队列大小字段，仅输出状态计数
-    const QUEUE_FIELDS = new Set(['queueSize', 'renderPending', 'printPending']);
-    for (const [status, count] of Object.entries(stats)) {
-      if (QUEUE_FIELDS.has(status)) continue;
-      lines.push(`hiprint_jobs_total{status="${status}"} ${count}`);
+    try {
+      const register = getRegistry();
+      res.set('Content-Type', register.contentType);
+      res.end(await register.metrics());
+    } catch (err) {
+      res.status(500).end(err.message);
     }
-
-    // 队列大小
-    lines.push('# HELP hiprint_queue_size Current queue size');
-    lines.push('# TYPE hiprint_queue_size gauge');
-    lines.push(`hiprint_render_queue_size ${stats.renderPending || 0}`);
-    lines.push(`hiprint_print_queue_size ${stats.printPending || 0}`);
-
-    // 进程运行时间
-    lines.push('# HELP hiprint_uptime_seconds Process uptime in seconds');
-    lines.push('# TYPE hiprint_uptime_seconds gauge');
-    lines.push(`hiprint_uptime_seconds ${Math.floor(process.uptime())}`);
-
-    res.set('Content-Type', 'text/plain; version=0.0.4');
-    res.send(lines.join('\n') + '\n');
   });
 
   return router;
