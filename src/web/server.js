@@ -107,11 +107,6 @@ export async function createAdminWeb({
     });
     app.use(sessionMiddleware);
 
-    // 登录页路由（在 auth 中间件之前注册，避免循环重定向）
-    app.get('/login', (_req, res) => {
-      res.sendFile(resolve(publicDir, 'login.html'));
-    });
-
     // 登录接口
     app.post('/api/login', async (req, res) => {
       const { username, password } = req.body;
@@ -197,6 +192,27 @@ export async function createAdminWeb({
   metricsRoutes(app, deps);
   maintenanceRoutes(app, deps);
   configRoutes(app, deps);
+
+  // SPA fallback：未匹配的页面导航请求统一返回 index.html，由前端路由处理
+  app.get('*', (req, res, next) => {
+    // API / WebSocket / 特殊端点不走 fallback
+    if (
+      req.path === '/api'
+      || req.path.startsWith('/api/')
+      || req.path.startsWith('/admin-ws')
+      || req.path === '/health'
+      || req.path === '/metrics'
+      || req.path === '/openapi.json'
+    ) {
+      return next();
+    }
+    // 仅对页面导航请求（accept: text/html）执行 SPA 回退，避免吞掉静态资源 404
+    const accept = req.headers.accept || '';
+    if (!accept.includes('text/html')) {
+      return next();
+    }
+    return res.sendFile(resolve(publicDir, 'index.html'));
+  });
 
   // ============================================================
   // 全局错误处理中间件

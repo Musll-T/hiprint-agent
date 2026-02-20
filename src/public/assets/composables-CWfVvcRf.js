@@ -1,0 +1,1 @@
+import{l as r}from"./context-CuSugIpk.js";import{aR as i,T as n}from"./index-Dq3TnNJu.js";function l(){const o=n(r,null);return o===null&&i("use-dialog","No outer <n-dialog-provider /> founded."),o}export{l as u};

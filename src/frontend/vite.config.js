@@ -6,15 +6,14 @@ export default defineConfig({
   root: resolve(__dirname),
   plugins: [vue()],
   base: '/',
+  resolve: {
+    alias: {
+      '@': resolve(__dirname),
+    },
+  },
   build: {
     outDir: resolve(__dirname, '..', 'public'),
     emptyOutDir: false,
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'index.html'),
-        login: resolve(__dirname, 'login.html'),
-      },
-    },
   },
   server: {
     port: 5173,

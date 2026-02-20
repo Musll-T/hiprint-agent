@@ -1,47 +1,39 @@
 /**
  * Admin Web 认证中间件
  *
- * 基于 express-session 的登录认证，拦截未认证请求。
+ * 基于 express-session 的登录认证：
+ * - 放行公开端点和前端 SPA 页面/静态资源请求
+ * - 对未认证的受保护 API 请求统一返回 401 JSON
+ * 前端 SPA 根据 401 响应执行登录跳转。
+ *
  * 白名单路径（无需认证即可访问）：
  *   - /health
- *   - /login
  *   - /api/login
- *   - /css/*
- *   - /js/login.js
+ *   - 所有非 API / 非 WebSocket 的 GET 请求（SPA 页面和静态资源）
  */
 
 import { getLogger } from '../../logger.js';
 
-/** 白名单路径前缀/精确匹配 */
+/** 白名单路径精确匹配 */
 const PUBLIC_PATHS = [
   '/health',
-  '/login',
   '/api/login',
   // '/metrics' 已移至需认证保护（安全基线 Phase 0）
 ];
 
-/** 白名单路径前缀匹配 */
-const PUBLIC_PREFIXES = [
-  '/css/',
-];
-
-/** 白名单精确文件 */
-const PUBLIC_FILES = [
-  '/js/login.js',
-];
-
 /**
- * 判断请求路径是否在白名单中
- * @param {string} path - 请求路径
+ * 判断请求是否为受保护的 API/WebSocket 端点
+ * @param {import('express').Request} req
  * @returns {boolean}
  */
-function isPublicPath(path) {
-  if (PUBLIC_PATHS.includes(path)) return true;
-  if (PUBLIC_FILES.includes(path)) return true;
-  for (const prefix of PUBLIC_PREFIXES) {
-    if (path.startsWith(prefix)) return true;
-  }
-  return false;
+function isProtectedEndpoint(req) {
+  const { path } = req;
+  return (
+    path === '/api' || path.startsWith('/api/')
+    || path === '/admin-ws' || path.startsWith('/admin-ws/')
+    || path === '/metrics'
+    || path === '/openapi.json'
+  );
 }
 
 /**
@@ -54,8 +46,13 @@ export function createAuthMiddleware(config) {
   const log = getLogger();
 
   return (req, res, next) => {
-    // 白名单路径直接放行
-    if (isPublicPath(req.path)) {
+    // 公开端点直接放行
+    if (PUBLIC_PATHS.includes(req.path)) {
+      return next();
+    }
+
+    // 非受保护端点（SPA 页面、静态资源）直接放行，让用户能加载前端应用
+    if (!isProtectedEndpoint(req)) {
       return next();
     }
 
@@ -66,12 +63,6 @@ export function createAuthMiddleware(config) {
 
     log.debug({ path: req.path, method: req.method }, '未认证请求被拦截');
 
-    // API 请求返回 401 JSON
-    if (req.path.startsWith('/api/') || req.xhr || req.headers.accept?.includes('application/json')) {
-      return res.status(401).json({ error: '未认证，请先登录' });
-    }
-
-    // 页面请求重定向到登录页
-    return res.redirect('/login');
+    return res.status(401).json({ error: '未认证，请先登录' });
   };
 }

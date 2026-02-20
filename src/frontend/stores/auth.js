@@ -4,6 +4,7 @@
 
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+import { router, resetAuthCache } from '../router/index.js';
 import { postJSON } from '../composables/useApi.js';
 
 export const useAuthStore = defineStore('auth', () => {
@@ -36,7 +37,8 @@ export const useAuthStore = defineStore('auth', () => {
       // 即使请求失败也执行跳转
     }
     authenticated.value = false;
-    window.location.href = '/login';
+    resetAuthCache();
+    router.push('/login');
   }
 
   return {

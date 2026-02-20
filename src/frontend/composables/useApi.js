@@ -1,9 +1,11 @@
 /**
  * useApi - HTTP 请求工具 composable
  *
- * 封装 fetch 调用，提供 JSON 序列化/反序列化和 401 自动跳转。
+ * 封装 fetch 调用，提供 JSON 序列化/反序列化和 401 自动路由跳转。
  * 从原 src/public/js/app.js 的 fetchJSON/postJSON/putJSON/deleteJSON 迁移。
  */
+
+import { router, resetAuthCache } from '../router/index.js';
 
 /**
  * 统一响应错误处理
@@ -12,7 +14,8 @@
  */
 async function handleResponse(res) {
   if (res.status === 401) {
-    window.location.href = '/login';
+    resetAuthCache();
+    router.push('/login');
     throw new Error('未授权，跳转登录');
   }
   if (!res.ok) {

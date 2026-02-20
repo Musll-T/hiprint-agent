@@ -1,6 +1,5 @@
 <template>
-  <n-config-provider :theme="theme">
-    <div class="login-container">
+  <div class="login-container">
       <div class="login-card">
         <!-- Logo -->
         <div class="login-header">
@@ -57,28 +56,26 @@
         </div>
       </div>
     </div>
-  </n-config-provider>
 </template>
 
 <script setup>
 /**
  * Login - 登录页
  *
- * 独立于主应用的登录视图，使用 Naive UI 组件。
- * 成功后通过 window.location.href 跳转到主面板。
+ * SPA 内的登录视图，使用 Naive UI 组件。
+ * 成功后通过 router.push 跳转到主面板。
  */
 import { ref } from 'vue';
+import { useRouter } from 'vue-router';
 import {
-  NConfigProvider,
   NForm,
   NFormItem,
   NInput,
   NButton,
 } from 'naive-ui';
 import { Printer } from 'lucide-vue-next';
-import { useTheme } from './composables/useTheme.js';
 
-const { theme } = useTheme();
+const router = useRouter();
 
 const formRef = ref(null);
 const loading = ref(false);
@@ -128,7 +125,7 @@ async function handleSubmit() {
 
     if (res.ok) {
       // 登录成功，跳转主面板
-      window.location.href = '/';
+      router.push('/dashboard');
     } else {
       errorMsg.value = data.error || '登录失败';
     }
